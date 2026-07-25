@@ -1,0 +1,6 @@
+{
+  "name": "Nexus AI Studio",
+  "description": "All-in-one AI workspace featuring Chat, Smart Reminders, Document Search, Voice Input, and Secure Accounts.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
