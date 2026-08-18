@@ -24,7 +24,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setLoading(true);
 
     try {
-      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const API_BASE_URL = 'https://oneai-app-export.onrender.com';
+      const endpoint =
+        API_BASE_URL + (mode === 'login' ? '/api/auth/login' : '/api/auth/register');
       const body = mode === 'login' ? { email, password } : { name, email, password };
 
       const res = await fetch(endpoint, {

@@ -11,6 +11,8 @@ import { AuthModal } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import SettingsModal from './components/SettingsModal';
 
+
+const API_BASE_URL = 'https://oneai-app-export.onrender.com';
 export default function App() {
   // Auth state
   const [user, setUser] = useState<User | null>(null);
@@ -53,7 +55,7 @@ export default function App() {
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch('/api/documents', {
+      const res = await fetch(`${API_BASE_URL}/api/documents`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       if (res.ok) {
@@ -67,7 +69,7 @@ export default function App() {
 
   const fetchReminders = async () => {
     try {
-      const res = await fetch('/api/reminders', {
+      const res = await fetch(`${API_BASE_URL}/api/reminders`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       if (res.ok) {
@@ -226,7 +228,7 @@ export default function App() {
 
     try {
       const history = messages.slice(-8); // Send last 8 messages for memory context
-      const res = await fetch('/api/chat/generate', {
+      const res = await fetch(`${API_BASE_URL}/api/chat/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -344,7 +346,7 @@ export default function App() {
     fileType: string,
     content: string
   ) => {
-    const res = await fetch('/api/documents/upload', {
+    const res = await fetch(`${API_BASE_URL}/api/documents/upload`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -360,7 +362,7 @@ export default function App() {
   };
 
   const handleDeleteDocument = async (id: string) => {
-    await fetch(`/api/documents/${id}`, {
+    await fetch(`${API_BASE_URL}/api/documents/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -374,7 +376,7 @@ export default function App() {
 
   const handleUpdateReminder = async (updated: Reminder) => {
     setReminders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    await fetch(`/api/reminders/${updated.id}`, {
+    await fetch(`${API_BASE_URL}/api/reminders/${updated.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -386,7 +388,7 @@ export default function App() {
 
   const handleDeleteReminder = async (id: string) => {
     setReminders((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`/api/reminders/${id}`, {
+    await fetch(`${API_BASE_URL}/api/reminders/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${authToken}` },
     });
@@ -500,7 +502,7 @@ export default function App() {
               }}
               onSendToReminder={async (text) => {
                 setActiveTab('reminders');
-                const res = await fetch('/api/reminders/parse-ai', {
+                const res = await fetch(`${API_BASE_URL}/api/reminders/parse-ai`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ prompt: text }),

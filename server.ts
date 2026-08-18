@@ -218,7 +218,7 @@ function getUserIdFromReq(req: express.Request): string {
     }
   }
 
-  return "demo-user-1";
+  return "";
 }
 
 // API ROUTE: Login

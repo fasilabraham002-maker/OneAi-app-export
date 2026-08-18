@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { UploadedDocument, SearchQueryResponse } from '../types';
 import { Search, Upload, FileText, Sparkles, Trash2, ArrowRight, CheckCircle2, Tag, BookOpen, Mic, AlertCircle, RefreshCw, Paperclip } from 'lucide-react';
 
+
+const API_BASE_URL = 'https://oneai-app-export.onrender.com';
 interface DocumentSearchProps {
   documents: UploadedDocument[];
   authToken: string;
@@ -45,7 +47,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
     setSearching(true);
     try {
-      const res = await fetch('/api/documents/search', {
+      const res = await fetch(`${API_BASE_URL}/api/documents/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

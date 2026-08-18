@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Reminder, PriorityLevel, ReminderCategory } from '../types';
 import { Bell, Plus, Sparkles, CheckSquare, Square, Calendar, Clock, Tag, AlertTriangle, Trash2, CheckCircle2, Mic, ListChecks, ChevronRight, Filter } from 'lucide-react';
 
+
+const API_BASE_URL = 'https://oneai-app-export.onrender.com';
 interface SmartRemindersProps {
   authToken: string;
   reminders: Reminder[];
@@ -41,7 +43,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
 
     setParsingAi(true);
     try {
-      const res = await fetch('/api/reminders/parse-ai', {
+      const res = await fetch(`${API_BASE_URL}/api/reminders/parse-ai`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
