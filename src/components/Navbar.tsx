@@ -36,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-              Nexus AI
+              OneAI
             </span>
             <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
               <Sparkles className="h-3 w-3" /> v2.5

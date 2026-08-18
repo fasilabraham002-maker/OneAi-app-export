@@ -4,6 +4,7 @@ import { Search, Upload, FileText, Sparkles, Trash2, ArrowRight, CheckCircle2, T
 
 interface DocumentSearchProps {
   documents: UploadedDocument[];
+  authToken: string;
   onUploadDocument: (title: string, fileName: string, fileType: string, content: string) => Promise<void>;
   onDeleteDocument: (id: string) => Promise<void>;
   isVoiceListening: boolean;
@@ -13,6 +14,7 @@ interface DocumentSearchProps {
 
 export const DocumentSearch: React.FC<DocumentSearchProps> = ({
   documents,
+  authToken,
   onUploadDocument,
   onDeleteDocument,
   isVoiceListening,
@@ -45,7 +47,10 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     try {
       const res = await fetch('/api/documents/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({ query }),
       });
 
@@ -90,16 +95,41 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const extension = file.name.split('.').pop()?.toLowerCase();
+
+    // Browser-native text formats supported by OneAI.
+    const supportedTypes = ['txt', 'md', 'csv', 'json'];
+
+    if (!extension || !supportedTypes.includes(extension)) {
+      alert(
+        'This file type is not supported yet. Please upload a .txt, .md, .csv, or .json file.'
+      );
+      e.target.value = '';
+      return;
+    }
+
     setDocFileName(file.name);
+
     if (!docTitle) {
       setDocTitle(file.name.replace(/\.[^/.]+$/, ''));
     }
 
     const reader = new FileReader();
+
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setDocContent(text);
+      const text = event.target?.result;
+
+      if (typeof text === 'string') {
+        setDocContent(text);
+      } else {
+        alert('Unable to read this document.');
+      }
     };
+
+    reader.onerror = () => {
+      alert('Failed to read the selected document.');
+    };
+
     reader.readAsText(file);
   };
 
@@ -113,7 +143,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
             <span>AI-Powered Document Search & Knowledge Base</span>
           </h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Upload text documents, roadmaps, policies & notes to query them using Gemini 3.6 Flash semantic reasoning.
+            Upload text documents, roadmaps, policies & notes to query them using OneAI semantic reasoning.
           </p>
         </div>
 
@@ -135,8 +165,8 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask anything about your documents (e.g. 'What are our Q3 metrics and security policies?')..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              placeholder="Ask anything about your documents..."
+              className="w-full rounded-xl border-2 border-slate-300 bg-white px-4 py-3 text-base font-medium text-black placeholder:text-slate-500 outline-none transition focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400"
             />
             <button
               type="button"
@@ -167,7 +197,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
           <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-700">
             <div className="flex items-center gap-2 text-sm font-bold text-indigo-600 dark:text-indigo-400">
               <Sparkles className="h-4 w-4" />
-              <span>Gemini AI Synthesis Answer</span>
+              <span>OneAI Synthesis Answer</span>
             </div>
             <span className="text-xs text-slate-400">Source Citations: {searchResult.sources.length}</span>
           </div>
@@ -298,7 +328,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
               <span>Upload Document to Knowledge Base</span>
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Paste document text or select a file (.txt, .md, .csv, .json). Gemini will automatically summarize and chunk it.
+              Paste document text or select a text file (.txt, .md, .csv, .json). OneAI will automatically summarize and chunk it.
             </p>
 
             <form onSubmit={handleFileUpload} className="mt-4 space-y-4">
@@ -310,7 +340,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                   value={docTitle}
                   onChange={(e) => setDocTitle(e.target.value)}
                   placeholder="e.g. Q3 Strategic AI Roadmap"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
@@ -318,7 +348,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">File Attachment (Optional File Picker)</label>
                 <input
                   type="file"
-                  accept=".txt,.md,.json,.csv,.doc,.pdf"
+                  accept=".txt,.md,.json,.csv"
                   onChange={handleFileDrop}
                   className="mt-1 w-full text-xs text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
                 />
@@ -328,11 +358,17 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Document Text Content</label>
                 <textarea
                   required
-                  rows={6}
+                  rows={10}
                   value={docContent}
                   onChange={(e) => setDocContent(e.target.value)}
                   placeholder="Paste raw text, notes, guidelines, or code here..."
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-mono text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-2 block w-full min-h-[240px] resize-y rounded-xl border-2 border-slate-400 bg-white p-4 text-base font-mono font-medium text-black placeholder:text-slate-500 caret-indigo-600 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  style={{
+                    color: '#000000',
+                    backgroundColor: '#ffffff',
+                    WebkitTextFillColor: '#000000',
+                    caretColor: '#4f46e5',
+                  }}
                 />
               </div>
 

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "demo-user-1",
+    "name": "Alex Rivera",
+    "email": "alex.rivera@nexus.ai",
+    "passwordHash": "d3ad9315b7be5dd53b31a273b3b3aba5defe700808305aa16a3062b76658a791",
+    "createdAt": "2026-08-16T17:03:14.642Z"
+  },
+  {
+    "id": "user-1786901626585",
+    "name": "Fasil Abraham",
+    "email": "fasilabraham002@gmail.com",
+    "passwordHash": "20c57997be99466830c0de3cfb53ad4ddefa9c493b03645e3a5494205920ae2e",
+    "createdAt": "2026-08-16T17:33:46.601Z"
+  },
+  {
+    "id": "user-1786902579228",
+    "name": "Fasil",
+    "email": "fasilabraham003@gmail.com",
+    "passwordHash": "2cd65183f869e337a6ff6bef17a0111657ded4d2226a32a6a682fd32d793b107",
+    "createdAt": "2026-08-16T17:49:39.230Z"
+  },
+  {
+    "id": "user-1786948822784",
+    "name": "Fasil",
+    "email": "fasilabraham004@gmail.com",
+    "passwordHash": "c9629fc1d9cfd4d44c5dc95beaa4f8623e4c97bcbfdd6e36abf6dc4926a3c6b3",
+    "createdAt": "2026-08-17T06:40:22.787Z"
+  },
+  {
+    "id": "user-1786981274522",
+    "name": "Fasil",
+    "email": "fasilabraham005@gmail.com",
+    "passwordHash": "216039d98dc5a32f96076c7fe689599888dd915ef024133fa87b7dbece5613cf",
+    "createdAt": "2026-08-17T15:41:14.524Z"
+  }
+]

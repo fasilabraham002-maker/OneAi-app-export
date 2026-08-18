@@ -3,6 +3,7 @@ import { Reminder, PriorityLevel, ReminderCategory } from '../types';
 import { Bell, Plus, Sparkles, CheckSquare, Square, Calendar, Clock, Tag, AlertTriangle, Trash2, CheckCircle2, Mic, ListChecks, ChevronRight, Filter } from 'lucide-react';
 
 interface SmartRemindersProps {
+  authToken: string;
   reminders: Reminder[];
   onAddReminder: (reminder: Reminder) => void;
   onUpdateReminder: (reminder: Reminder) => void;
@@ -14,6 +15,7 @@ interface SmartRemindersProps {
 
 export const SmartReminders: React.FC<SmartRemindersProps> = ({
   reminders,
+  authToken,
   onAddReminder,
   onUpdateReminder,
   onDeleteReminder,
@@ -41,7 +43,10 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
     try {
       const res = await fetch('/api/reminders/parse-ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({ prompt: promptInput }),
       });
 
@@ -107,7 +112,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
           <span>Smart AI Reminders & Task Breakdown</span>
         </h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Dictate or type natural requests. Gemini 3.6 Flash will extract due dates, categories, priorities, and step-by-step subtasks.
+          Dictate or type natural requests. OneAI will extract due dates, categories, priorities, and step-by-step subtasks.
         </p>
       </div>
 
@@ -157,7 +162,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
               className={`rounded-lg px-3 py-1 text-xs font-medium capitalize transition ${
                 statusFilter === filter
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
               }`}
             >
               {filter === 'high' ? '🔥 High Priority' : filter}
@@ -170,7 +175,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-700 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >
             <option value="all">All Categories</option>
             <option value="work">Work</option>
@@ -197,7 +202,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
               className={`group relative rounded-2xl border p-4 shadow-sm transition ${
                 reminder.isCompleted
                   ? 'border-slate-200 bg-slate-100/60 opacity-75 dark:border-slate-800 dark:bg-slate-900/40'
-                  : 'border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-800 dark:bg-slate-900'
+                  : 'border-slate-800 bg-slate-900 hover:border-indigo-500 dark:border-slate-800 dark:bg-slate-900'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -245,7 +250,7 @@ export const SmartReminders: React.FC<SmartRemindersProps> = ({
 
                     {/* Subtasks Checklist */}
                     {reminder.subtasks && reminder.subtasks.length > 0 && (
-                      <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-800/50">
+                      <div className="mt-3 rounded-xl border border-slate-800 bg-slate-800/50 p-3 dark:border-slate-800 dark:bg-slate-800/50">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
                           <ListChecks className="h-4 w-4 text-indigo-500" />
                           <span>AI Breakdown Checklist ({reminder.subtasks.filter((s) => s.completed).length}/{reminder.subtasks.length})</span>

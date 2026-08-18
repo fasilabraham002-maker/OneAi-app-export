@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
+import { UserCheck, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
@@ -8,22 +9,12 @@ import { SmartReminders } from './components/SmartReminders';
 import { VoiceController } from './components/VoiceController';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
+import SettingsModal from './components/SettingsModal';
 
 export default function App() {
   // Auth state
-  const [user, setUser] = useState<User | null>({
-    id: 'demo-user-1',
-    name: 'Alex Rivera',
-    email: 'alex.rivera@nexus.ai',
-    createdAt: new Date().toISOString(),
-    preferences: {
-      theme: 'light',
-      autoTextToSpeech: false,
-      voiceGender: 'female',
-      reminderNotifications: true,
-    },
-  });
-  const [authToken, setAuthToken] = useState<string>('user_demo-user-1');
+  const [user, setUser] = useState<User | null>(null);
+  const [authToken, setAuthToken] = useState<string>('');
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<string>('chat');
@@ -31,6 +22,7 @@ export default function App() {
 
   // Modals state
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // App data state
@@ -38,7 +30,7 @@ export default function App() {
     {
       id: 'm1',
       sender: 'assistant',
-      content: 'Hello Alex! Welcome to Nexus AI. How can I assist you with your chat, smart reminders, or document search today?',
+      content: "Hello! I'm OneAI. How can I help you today?",
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -88,60 +80,140 @@ export default function App() {
   };
 
   // Voice recognition setup
-  const toggleVoiceListening = () => {
+  const toggleVoiceListening = async () => {
     if (isVoiceListening) {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Recognition may already be stopped.
+        }
       }
       setIsVoiceListening(false);
       return;
     }
 
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert('Web Speech API is not supported in this browser. You can still use keyboard input.');
+      alert(
+        'Voice recognition is not available in this browser. Please use Chrome and allow microphone access for OneAI.'
+      );
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert(
+        'Microphone access is not available. Please use Chrome over HTTPS.'
+      );
       return;
     }
 
     try {
+      // Ask Chrome for microphone permission before starting recognition.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+
+      // Release the temporary permission-check stream.
+      stream.getTracks().forEach((track) => track.stop());
+
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
+      recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
+        console.log('OneAI voice recognition started');
         setIsVoiceListening(true);
       };
 
       recognition.onresult = (event: any) => {
-        let currentTranscript = '';
+        let transcript = '';
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript;
+          transcript += event.results[i][0].transcript;
         }
-        setVoiceText(currentTranscript);
+
+        transcript = transcript.trim();
+
+        if (transcript) {
+          setVoiceText(transcript);
+        }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
+        console.warn('OneAI speech recognition error:', event.error);
+
+        if (
+          event.error === 'not-allowed' ||
+          event.error === 'service-not-allowed'
+        ) {
+          alert(
+            'Microphone access was denied. Open Chrome Site Settings for OneAI and set Microphone to Allow.'
+          );
+        } else if (event.error === 'audio-capture') {
+          alert(
+            'OneAI could not access the microphone. Check that another app is not using it.'
+          );
+        }
+
         setIsVoiceListening(false);
       };
 
       recognition.onend = () => {
+        console.log('OneAI voice recognition ended');
         setIsVoiceListening(false);
       };
 
       recognitionRef.current = recognition;
+      setVoiceText('');
+
+      // Start only after Chrome confirms microphone access.
+      // Give Chrome Android a moment after microphone permission is granted.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    try {
       recognition.start();
-    } catch (err) {
-      console.error('Failed to start speech recognition:', err);
+    } catch (startErr) {
+      console.error('Speech recognition start failed:', startErr);
       setIsVoiceListening(false);
+      alert(
+        'OneAI could not start voice recognition. Please tap the microphone again and make sure Chrome microphone access is allowed.'
+      );
+    }
+    } catch (err: any) {
+      console.error('Failed to access microphone:', err);
+      setIsVoiceListening(false);
+
+      if (
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError'
+      ) {
+        alert(
+          'Microphone access was denied. Open Chrome Site Settings for OneAI and set Microphone to Allow.'
+        );
+      } else if (err?.name === 'NotFoundError') {
+        alert('No microphone was found on this device.');
+      } else {
+        alert(
+          'OneAI could not access your microphone. Please check Chrome microphone permissions and try again.'
+        );
+      }
     }
   };
 
   // Chat message submit handler
   const handleSendMessage = async (text: string, attachedDocs: string[], systemInstruction?: string) => {
+    if (chatLoading) {
+      console.log("OneAI: chat request already in progress.");
+      return;
+    }
+
     const userMsg: ChatMessage = {
       id: `m-${Date.now()}`,
       sender: 'user',
@@ -168,18 +240,90 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'AI generation failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'AI generation failed');
+      }
 
-      const aiMsg: ChatMessage = {
-        id: `m-ai-${Date.now()}`,
-        sender: 'assistant',
-        content: data.reply,
-        timestamp: new Date().toISOString(),
-        sources: data.sources || [],
-      };
+      if (!res.body) {
+        throw new Error('Streaming response is not supported by this browser.');
+      }
 
-      setMessages((prev) => [...prev, aiMsg]);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamedText = '';
+      let sources: ChatMessage['sources'] = [];
+
+      const aiMessageId = `m-ai-${Date.now()}`;
+
+      // Add an empty assistant message immediately so the UI can update
+      // as OneAI sends each chunk.
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMessageId,
+          sender: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+          sources: [],
+        },
+      ]);
+
+      while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          let event;
+          try {
+            event = JSON.parse(trimmedLine);
+          } catch (parseError) {
+            console.warn('OneAI stream parse warning:', trimmedLine);
+            continue;
+          }
+
+          if (event.type === 'chunk') {
+            streamedText += event.text;
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: streamedText }
+                  : msg
+              )
+            );
+          } else if (event.type === 'done') {
+            sources = event.sources || [];
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMessageId
+                  ? {
+                      ...msg,
+                      content:
+                        event.reply ||
+                        streamedText ||
+                        'I processed your request, but received an empty response from OneAI.',
+                      sources,
+                    }
+                  : msg
+              )
+            );
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'OneAI generation failed');
+          }
+        }
+      }
     } catch (err: any) {
       const errorMsg: ChatMessage = {
         id: `m-err-${Date.now()}`,
@@ -260,8 +404,16 @@ export default function App() {
 
   // Auth & Profile actions
   const handleAuthSuccess = (loggedUser: User, token: string) => {
+    console.log("AUTH SUCCESS:", loggedUser.email);
+
     setUser(loggedUser);
     setAuthToken(token);
+
+    localStorage.setItem("oneai_auth_token", token);
+    localStorage.setItem("oneai_user", JSON.stringify(loggedUser));
+
+    setIsAuthModalOpen(false);
+    setIsProfileModalOpen(false);
   };
 
   const handleLogout = () => {
@@ -272,7 +424,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100 font-sans">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-slate-950 font-sans text-slate-100 antialiased">
       {/* Navigation Header */}
       <Navbar
         user={user}
@@ -298,7 +450,7 @@ export default function App() {
         />
 
         {/* View Router Workspace */}
-        <main className="flex-1 overflow-hidden">
+        <main className="min-w-0 flex-1 overflow-hidden bg-slate-950">
           {activeTab === 'chat' && (
             <ChatView
               messages={messages}
@@ -314,6 +466,7 @@ export default function App() {
           {activeTab === 'documents' && (
             <DocumentSearch
               documents={documents}
+              authToken={authToken}
               onUploadDocument={handleUploadDocument}
               onDeleteDocument={handleDeleteDocument}
               isVoiceListening={isVoiceListening}
@@ -325,6 +478,7 @@ export default function App() {
           {activeTab === 'reminders' && (
             <SmartReminders
               reminders={reminders}
+              authToken={authToken}
               onAddReminder={handleAddReminder}
               onUpdateReminder={handleUpdateReminder}
               onDeleteReminder={handleDeleteReminder}
@@ -339,6 +493,7 @@ export default function App() {
               isListening={isVoiceListening}
               onToggleListen={toggleVoiceListening}
               voiceText={voiceText}
+              onClearTranscript={() => setVoiceText('')}
               onSendToChat={(text) => {
                 setActiveTab('chat');
                 handleSendMessage(text, []);
@@ -361,44 +516,316 @@ export default function App() {
           )}
 
           {activeTab === 'account' && (
-            <div className="p-6">
-              {user ? (
-                <div className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <h2 className="text-lg font-bold">User Account Settings</h2>
-                  <p className="text-xs text-slate-500 mt-1">Manage user security, password verification, and workspace sessions.</p>
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <p className="text-sm font-semibold">Name: {user.name}</p>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">Email: {user.email}</p>
-                    <p className="text-xs text-slate-400 mt-1">User Token: {authToken}</p>
-                    <button
-                      onClick={() => setIsProfileModalOpen(true)}
-                      className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                    >
-                      View Detailed Security Settings
-                    </button>
+              <div className="h-full overflow-y-auto bg-slate-950 p-4 sm:p-6 lg:p-8">
+                <div className="mx-auto max-w-4xl">
+                  <div className="mb-8">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/20">
+                        <UserCheck className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h1 className="text-xl font-bold text-white sm:text-2xl">
+                          Account & Workspace
+                        </h1>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Manage your OneAI profile, security, and preferences.
+                        </p>
+                      </div>
+                    </div>
                   </div>
+
+                  {user ? (
+                    <div className="space-y-5">
+                      <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-black/10 sm:p-6">
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-xl font-bold text-white shadow-lg shadow-indigo-500/20">
+                              {user.name?.charAt(0)?.toUpperCase() || 'U'}
+                            </div>
+
+                            <div>
+                              <p className="text-lg font-bold text-white">
+                                {user.name}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-400">
+                                {user.email}
+                              </p>
+                              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                Account active
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setIsProfileModalOpen(true)}
+                            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                          >
+                            Edit Profile
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-5 sm:grid-cols-2">
+<button
+  type="button"
+        onClick={() => setActiveTab('workspace')}
+  className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left transition hover:border-indigo-500/60 hover:bg-slate-900"
+>
+  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+    Workspace
+  </p>
+  <p className="mt-2 text-sm font-semibold text-white">
+    OneAI Intelligent Workspace
+  </p>
+  <p className="mt-1 text-xs text-slate-400">
+    AI chat, documents, reminders and voice tools.
+  </p>
+  <p className="mt-3 text-[11px] font-semibold text-indigo-400 opacity-0 transition group-hover:opacity-100">
+    Open workspace tools →
+  </p>
+</button>
+
+<button
+  type="button"
+        onClick={() => setIsSettingsModalOpen(true)}
+  className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left transition hover:border-emerald-500/60 hover:bg-slate-900"
+>
+  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+    Security
+  </p>
+  <p className="mt-2 text-sm font-semibold text-white">
+    Protected session
+  </p>
+  <p className="mt-1 text-xs text-slate-400">
+    Manage authentication and account security.
+  </p>
+  <p className="mt-3 text-[11px] font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100">
+    Open security settings →
+  </p>
+</button>
+</div>
+
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Profile & Preferences
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              Personalize your OneAI experience.
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                    setIsProfileModalOpen(true);
+                  }}
+                            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-indigo-500 hover:bg-slate-700"
+                          >
+                            Manage
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-xl">
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/10">
+                        <UserCheck className="h-8 w-8 text-indigo-400" />
+                      </div>
+
+                      <h2 className="mt-5 text-xl font-bold text-white">
+                        Welcome to OneAI
+                      </h2>
+
+                      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+                        Sign in to manage your profile, preferences, security,
+                        and personalized workspace.
+                      </p>
+
+                      <button
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className="mt-6 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500"
+                      >
+                        Sign In / Create Account
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-12">
-                  <h3 className="text-base font-bold">No active user account</h3>
-                  <button
-                    onClick={() => setIsAuthModalOpen(true)}
-                    className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                  >
-                    Sign In or Create Account
-                  </button>
-                </div>
-              )}
+              </div>
+            )}
+
+      {/* Workspace Hub */}
+      {activeTab === 'workspace' && (
+        <div className="h-full overflow-y-auto bg-slate-950 p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-8">
+              <h1 className="text-xl font-bold text-white sm:text-2xl">
+                OneAI Workspace
+              </h1>
+              <p className="mt-1 text-sm text-slate-400">
+                Choose a tool to continue working with OneAI.
+              </p>
             </div>
-          )}
-        </main>
-      </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('chat')}
+                className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left transition hover:border-indigo-500/60 hover:bg-slate-900"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                  AI Chat
+                </p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  Conversations
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Chat with OneAI and work with your AI assistant.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('documents')}
+                className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left transition hover:border-violet-500/60 hover:bg-slate-900"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-violet-400">
+                  Documents
+                </p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  Document Search
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Search and work with your uploaded documents.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('reminders')}
+                className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left transition hover:border-amber-500/60 hover:bg-slate-900"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                  Reminders
+                </p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  Smart Reminders
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Create and manage your AI-powered reminders.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('voice')}
+                className="group rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left transition hover:border-emerald-500/60 hover:bg-slate-900"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  Voice Tools
+                </p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  Voice Assistant
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Use OneAI voice tools for hands-free interaction.
+                </p>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('account')}
+              className="mt-6 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:bg-slate-700"
+            >
+              ← Back to Account
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="h-full overflow-y-auto bg-slate-950 p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
+                  <ShieldCheck className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-white sm:text-2xl">
+                    Security Settings
+                  </h1>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Manage authentication and account security.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Protected Session
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Your OneAI session is protected while you are signed in.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
+                    Active
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <p className="text-sm font-semibold text-white">
+                  Authentication
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Your account authentication is currently enabled.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <p className="text-sm font-semibold text-white">
+                  Account Security
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Keep your account credentials private and sign out when using a shared device.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('account')}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:bg-slate-700"
+              >
+                ← Back to Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+</main>
+</div>
 
       {/* Auth Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onSuccess={handleAuthSuccess}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
       />
 
       {/* Profile Modal */}
@@ -410,6 +837,8 @@ export default function App() {
           onLogout={handleLogout}
         />
       )}
+
     </div>
   );
+
 }

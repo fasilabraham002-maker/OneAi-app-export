@@ -25,7 +25,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [systemInstruction, setSystemInstruction] = useState<string>(
-    'You are Nexus AI, an intelligent workspace assistant skilled in concise answers, document analysis, and actionable advice.'
+    'You are OneAI, an intelligent workspace assistant skilled in concise answers, document analysis, and actionable advice.'
   );
   const [showDocSelector, setShowDocSelector] = useState(false);
 
@@ -36,10 +36,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Sync voice dictation input
+  // Sync voice dictation input without duplicating transcripts.
   useEffect(() => {
-    if (voiceText) {
-      setInput((prev) => (prev ? `${prev} ${voiceText}` : voiceText));
+    if (voiceText.trim()) {
+      setInput(voiceText);
     }
   }, [voiceText]);
 
@@ -62,26 +62,122 @@ export const ChatView: React.FC<ChatViewProps> = ({
     );
   };
 
+  const voicesNotReady = (synth: SpeechSynthesis) => {
+    return synth.getVoices().length === 0;
+  };
+
+  // Warm up Android Chrome's speech engine early.
+  // This prevents the first real speech from waiting for voice initialization.
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+
+    const synth = window.speechSynthesis;
+
+    synth.getVoices();
+
+    const warmupVoice = () => {
+      const voices = synth.getVoices();
+      if (!voices.length) return;
+
+      try {
+        synth.cancel();
+
+        const warmup = new SpeechSynthesisUtterance("");
+        warmup.volume = 0;
+        warmup.rate = 1;
+        warmup.pitch = 1;
+        warmup.voice =
+          voices.find((v) => v.lang.toLowerCase().startsWith("en")) ||
+          voices[0];
+
+        synth.speak(warmup);
+
+        window.setTimeout(() => {
+          synth.cancel();
+        }, 50);
+      } catch (error) {
+        console.warn("OneAI TTS warmup failed:", error);
+      }
+    };
+
+    warmupVoice();
+
+    if (voicesNotReady(synth)) {
+      synth.addEventListener("voiceschanged", warmupVoice, { once: true });
+    }
+
+    return () => {
+      synth.cancel();
+    };
+  }, []);
+
   const handleSpeakText = (msgId: string, text: string) => {
-    if (!('speechSynthesis' in window)) {
-      alert('Speech synthesis is not supported in this browser.');
+    if (!("speechSynthesis" in window)) {
+      alert("Speech synthesis is not supported in this browser.");
       return;
     }
 
+    const synth = window.speechSynthesis;
+
+    // Stop the current speech immediately when the same message is tapped.
     if (speakingMessageId === msgId) {
-      window.speechSynthesis.cancel();
+      synth.cancel();
       setSpeakingMessageId(null);
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.onend = () => setSpeakingMessageId(null);
-    utterance.onerror = () => setSpeakingMessageId(null);
+    // Cancel anything already queued.
+    synth.cancel();
 
+    // Keep the text clean and avoid an unnecessarily large utterance.
+    const cleanText = text.trim();
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+
+    // Responsive settings for Android Chrome.
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Use an already available voice when possible.
+    const voices = synth.getVoices();
+    const preferredVoice =
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ||
+      voices.find((voice) => voice.default);
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    } else {
+      utterance.lang = "en-US";
+    }
+
+    utterance.onstart = () => {
+      console.log("OneAI TTS started");
+      setSpeakingMessageId(msgId);
+    };
+
+    utterance.onend = () => {
+      setSpeakingMessageId(null);
+    };
+
+    utterance.onerror = (event) => {
+      console.warn("OneAI TTS error:", event.error);
+      setSpeakingMessageId(null);
+    };
+
+    // Start immediately.
     setSpeakingMessageId(msgId);
-    window.speechSynthesis.speak(utterance);
+    console.log("OneAI TTS speak() called:", new Date().toISOString());
+    synth.speak(utterance);
+
+    // Android Chrome sometimes pauses newly queued speech.
+    window.setTimeout(() => {
+      if (synth.speaking && synth.paused) {
+        synth.resume();
+      }
+    }, 100);
   };
 
   const samplePrompts = [
@@ -92,18 +188,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
   ];
 
   return (
-    <div className="flex h-full flex-col bg-slate-50/50 dark:bg-slate-900/40">
+    <div className="flex h-full flex-col bg-slate-900/40">
       {/* Top Config Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2.5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/80 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-900/80 px-4 py-2.5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/80 sm:px-6">
         <div className="flex items-center gap-2">
           <Layers className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">System Mode:</span>
           <select
             value={systemInstruction}
             onChange={(e) => setSystemInstruction(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-800 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            className="rounded-lg border border-slate-200 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-800 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >
-            <option value="You are Nexus AI, an intelligent workspace assistant skilled in concise answers, document analysis, and actionable advice.">
+            <option value="You are OneAI, an intelligent workspace assistant skilled in concise answers, document analysis, and actionable advice.">
               Workspace Assistant (Balanced)
             </option>
             <option value="You are a strict technical lead and software architect. Provide highly detailed, robust, and technical explanations.">
@@ -128,7 +224,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           )}
           <button
             onClick={() => setShowDocSelector(!showDocSelector)}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             <FileText className="h-3.5 w-3.5 text-indigo-500" />
             <span>Attach Context Document</span>
@@ -140,7 +236,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {showDocSelector && (
         <div className="border-b border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-950 dark:bg-slate-900">
           <div className="mb-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-            Select Documents to Supply as Context to Gemini 3.6 Flash:
+            Select Documents to Supply as Context to OneAI:
           </div>
           {documents.length === 0 ? (
             <p className="text-xs text-slate-500">No documents uploaded yet. Go to Document Search tab to upload files.</p>
@@ -155,7 +251,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition ${
                       isSelected
                         ? 'border-indigo-500 bg-indigo-600 text-white'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                        : 'border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                     }`}
                   >
                     <FileText className="h-3.5 w-3.5" />
@@ -177,10 +273,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <Bot className="h-8 w-8" />
             </div>
             <h3 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">
-              Nexus AI Workspace Assistant
+              OneAI Workspace Assistant
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Powered by Gemini 3.6 Flash. Ask questions, analyze documents, or dictate requests.
+              Powered by OneAI. Ask questions, analyze documents, or dictate requests.
             </p>
 
             <div className="mt-6 grid gap-2 text-left">
@@ -277,7 +373,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div className="rounded-2xl rounded-tl-none border border-slate-200 bg-white p-4 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
               <div className="flex items-center gap-2">
                 <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
-                <span>Gemini 3.6 Flash is reasoning...</span>
+                <span>OneAI is reasoning...</span>
               </div>
             </div>
           </div>
@@ -309,7 +405,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={isVoiceListening ? 'Listening to voice dictation...' : 'Ask Gemini anything, dictate notes, or analyze attached docs...'}
+              placeholder={isVoiceListening ? 'Listening to voice dictation...' : 'Ask OneAI anything, dictate notes, or analyze attached docs...'}
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-10 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
             />
           </div>

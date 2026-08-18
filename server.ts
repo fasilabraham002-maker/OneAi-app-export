@@ -1,8 +1,10 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import crypto from "crypto";
+import fs from "fs";
 
 const app = express();
 const PORT = 3000;
@@ -10,12 +12,17 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 
 // Initialize Google GenAI client lazily or safely
+let genAIClient: GoogleGenAI | null = null;
+
 function getGenAIClient() {
+  if (genAIClient) return genAIClient;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn("GEMINI_API_KEY is missing from environment variables.");
   }
-  return new GoogleGenAI({
+
+  genAIClient = new GoogleGenAI({
     apiKey: apiKey || "dummy-key-for-dev",
     httpOptions: {
       headers: {
@@ -23,9 +30,11 @@ function getGenAIClient() {
       },
     },
   });
+
+  return genAIClient;
 }
 
-// In-Memory Database Store (with sample seed data)
+// Persistent local user database
 interface DBUser {
   id: string;
   name: string;
@@ -34,16 +43,60 @@ interface DBUser {
   createdAt: string;
 }
 
-const usersDb: Map<string, DBUser> = new Map();
-// Seed demo user account
-const demoPasswordHash = crypto.createHash("sha256").update("demo123").digest("hex");
-usersDb.set("demo-user-1", {
-  id: "demo-user-1",
-  name: "Alex Rivera",
-  email: "alex.rivera@nexus.ai",
-  passwordHash: demoPasswordHash,
-  createdAt: new Date().toISOString(),
-});
+const USERS_FILE = path.join(process.cwd(), "data", "users.json");
+
+function loadUsers(): Map<string, DBUser> {
+  try {
+    if (!fs.existsSync(USERS_FILE)) {
+      fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+      fs.writeFileSync(USERS_FILE, "[]", "utf8");
+      return new Map();
+    }
+
+    const raw = fs.readFileSync(USERS_FILE, "utf8");
+    const users: DBUser[] = JSON.parse(raw);
+
+    return new Map(users.map((user) => [user.id, user]));
+  } catch (error) {
+    console.error("Failed to load users:", error);
+    return new Map();
+  }
+}
+
+function saveUsers(users: Map<string, DBUser>) {
+  try {
+    fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+    fs.writeFileSync(
+      USERS_FILE,
+      JSON.stringify(Array.from(users.values()), null, 2),
+      "utf8"
+    );
+  } catch (error) {
+    console.error("Failed to save users:", error);
+  }
+}
+
+const usersDb: Map<string, DBUser> = loadUsers();
+
+// Ensure the built-in demo account exists.
+if (!Array.from(usersDb.values()).some(
+  (user) => user.email.toLowerCase() === "alex.rivera@nexus.ai"
+)) {
+  const demoPasswordHash = crypto
+    .createHash("sha256")
+    .update("demo123")
+    .digest("hex");
+
+  usersDb.set("demo-user-1", {
+    id: "demo-user-1",
+    name: "Alex Rivera",
+    email: "alex.rivera@nexus.ai",
+    passwordHash: demoPasswordHash,
+    createdAt: new Date().toISOString(),
+  });
+
+  saveUsers(usersDb);
+}
 
 // Seed sample documents
 const documentsDb: Map<string, any> = new Map();
@@ -145,110 +198,164 @@ remindersDb.set("rem-2", {
   ]
 });
 
-// Helper: Token auth check
+// ==================== AUTHENTICATION ====================
+
+function hashPassword(password: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(String(password), "utf8")
+    .digest("hex");
+}
+
 function getUserIdFromReq(req: express.Request): string {
   const authHeader = req.headers.authorization;
+
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.slice(7);
+
     if (token.startsWith("user_")) {
-      return token.replace("user_", "");
+      return token.slice(5);
     }
   }
+
   return "demo-user-1";
 }
 
-// API ROUTE: Auth - Login
+// API ROUTE: Login
 app.post("/api/auth/login", (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required" });
-  }
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
 
-  const hash = crypto.createHash("sha256").update(password).digest("hex");
-  let foundUser: DBUser | undefined;
-
-  for (const u of usersDb.values()) {
-    if (u.email.toLowerCase() === email.toLowerCase()) {
-      foundUser = u;
-      break;
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Email and password are required",
+      });
     }
-  }
 
-  if (!foundUser || foundUser.passwordHash !== hash) {
-    // If not found, let's auto-create or return error. Let's allow smooth login for quick testing
-    if (email.toLowerCase().includes("demo")) {
-      foundUser = usersDb.get("demo-user-1")!;
-    } else {
-      return res.status(401).json({ error: "Invalid email or password" });
+    const user = Array.from(usersDb.values()).find(
+      (u) => u.email.trim().toLowerCase() === email
+    );
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid email or password",
+      });
     }
-  }
 
-  const token = `user_${foundUser.id}`;
-  return res.json({
-    token,
-    user: {
-      id: foundUser.id,
-      name: foundUser.name,
-      email: foundUser.email,
-      createdAt: foundUser.createdAt,
-      preferences: {
-        theme: "light",
-        autoTextToSpeech: false,
-        voiceGender: "female",
-        reminderNotifications: true,
+    const passwordHash = hashPassword(password);
+
+    if (user.passwordHash !== passwordHash) {
+      return res.status(401).json({
+        error: "Invalid email or password",
+      });
+    }
+
+    const token = `user_${user.id}`;
+
+    return res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+        preferences: {
+          theme: "light",
+          autoTextToSpeech: false,
+          voiceGender: "female",
+          reminderNotifications: true,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    return res.status(500).json({
+      error: "Unable to complete sign in",
+    });
+  }
 });
 
-// API ROUTE: Auth - Register
+// API ROUTE: Register
 app.post("/api/auth/register", (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: "Name, email, and password are required" });
-  }
+  try {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
 
-  const existing = Array.from(usersDb.values()).find(
-    (u) => u.email.toLowerCase() === email.toLowerCase()
-  );
-  if (existing) {
-    return res.status(400).json({ error: "An account with this email already exists" });
-  }
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        error: "Name, email, and password are required",
+      });
+    }
 
-  const id = `user-${Date.now()}`;
-  const passwordHash = crypto.createHash("sha256").update(password).digest("hex");
-  const newUser: DBUser = {
-    id,
-    name,
-    email,
-    passwordHash,
-    createdAt: new Date().toISOString(),
-  };
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: "Password must be at least 6 characters",
+      });
+    }
 
-  usersDb.set(id, newUser);
+    const existing = Array.from(usersDb.values()).find(
+      (u) => u.email.trim().toLowerCase() === email
+    );
 
-  const token = `user_${id}`;
-  return res.json({
-    token,
-    user: {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      createdAt: newUser.createdAt,
-      preferences: {
-        theme: "light",
-        autoTextToSpeech: false,
-        voiceGender: "female",
-        reminderNotifications: true,
+    if (existing) {
+      return res.status(409).json({
+        error: "An account with this email already exists",
+      });
+    }
+
+    const id = `user-${Date.now()}`;
+
+    const newUser: DBUser = {
+      id,
+      name,
+      email,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString(),
+    };
+
+    usersDb.set(id, newUser);
+    saveUsers(usersDb);
+
+    const token = `user_${id}`;
+
+    return res.status(201).json({
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        createdAt: newUser.createdAt,
+        preferences: {
+          theme: "light",
+          autoTextToSpeech: false,
+          voiceGender: "female",
+          reminderNotifications: true,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+
+    return res.status(500).json({
+      error: "Unable to create account",
+    });
+  }
 });
 
-// API ROUTE: Auth - Get current user profile
+// API ROUTE: Current user
 app.get("/api/auth/me", (req, res) => {
   const userId = getUserIdFromReq(req);
-  const user = usersDb.get(userId) || usersDb.get("demo-user-1")!;
+  const user = usersDb.get(userId);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "Invalid or expired session",
+    });
+  }
+
   return res.json({
     user: {
       id: user.id,
@@ -283,16 +390,26 @@ app.post("/api/chat/generate", async (req, res) => {
       const userDocs = Array.from(documentsDb.values()).filter(
         (d) => d.userId === userId && attachedDocIds.includes(d.id)
       );
+
       if (userDocs.length > 0) {
-        contextDocs = "\n\nATTACHED DOCUMENTS CONTEXT:\n" +
-          userDocs.map(d => `--- Document: ${d.title} (${d.fileName}) ---\n${d.content}`).join("\n\n");
+        contextDocs =
+          "\n\nATTACHED DOCUMENTS CONTEXT:\n" +
+          userDocs
+            .map(
+              (d) =>
+                `--- Document: ${d.title} (${d.fileName}) ---\n${d.content}`
+            )
+            .join("\n\n");
       }
     }
 
-    const sysPrompt = (systemInstruction || "You are Nexus AI, a highly capable, articulate, and helpful workspace assistant.") + contextDocs;
+    const sysPrompt =
+      (systemInstruction ||
+        "You are Nexus AI, a highly capable, articulate, and helpful workspace assistant.") +
+      contextDocs;
 
-    // Build chat session contents
     const contents: any[] = [];
+
     if (history && history.length > 0) {
       for (const msg of history) {
         contents.push({
@@ -301,34 +418,97 @@ app.post("/api/chat/generate", async (req, res) => {
         });
       }
     }
+
     contents.push({
       role: "user",
       parts: [{ text: message }],
     });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+    const geminiStart = Date.now();
+    console.log("Gemini streaming request started:", new Date().toISOString());
+
+    const stream = await ai.models.generateContentStream({
+      model: "gemini-3.1-flash-lite",
       contents,
       config: {
         systemInstruction: sysPrompt,
       },
     });
 
-    const answerText = response.text || "I processed your request, but received an empty response from Gemini.";
+    // Stream newline-delimited JSON to the browser.
+    res.status(200);
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
 
-    return res.json({
-      reply: answerText,
-      sources: attachedDocIds.length > 0 ? attachedDocIds.map(id => {
-        const doc = documentsDb.get(id);
-        return doc ? { documentId: doc.id, documentTitle: doc.title, snippet: doc.summary || doc.content.slice(0, 150) } : null;
-      }).filter(Boolean) : [],
-    });
+    let fullText = "";
+
+    for await (const chunk of stream) {
+      const text = chunk.text || "";
+
+      if (text) {
+        fullText += text;
+
+        res.write(
+          JSON.stringify({
+            type: "chunk",
+            text,
+          }) + "\n"
+        );
+      }
+    }
+
+    console.log(
+      `Gemini streaming response completed in ${Date.now() - geminiStart}ms`
+    );
+
+    const sources =
+      attachedDocIds.length > 0
+        ? attachedDocIds
+            .map((id) => {
+              const doc = documentsDb.get(id);
+              return doc
+                ? {
+                    documentId: doc.id,
+                    documentTitle: doc.title,
+                    snippet:
+                      doc.summary || doc.content.slice(0, 150),
+                  }
+                : null;
+            })
+            .filter(Boolean)
+        : [];
+
+    res.write(
+      JSON.stringify({
+        type: "done",
+        sources,
+        reply:
+          fullText ||
+          "I processed your request, but received an empty response from Gemini.",
+      }) + "\n"
+    );
+
+    res.end();
   } catch (error: any) {
     console.error("Chat generation error:", error);
-    return res.status(500).json({
-      error: "Failed to process AI message with Gemini",
-      details: error.message || String(error),
-    });
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        error: "Failed to process AI message with Gemini",
+        details: error.message || String(error),
+      });
+    }
+
+    res.write(
+      JSON.stringify({
+        type: "error",
+        error: error.message || "Gemini generation failed",
+      }) + "\n"
+    );
+
+    res.end();
   }
 });
 
@@ -344,7 +524,7 @@ app.post("/api/reminders/parse-ai", async (req, res) => {
     const now = new Date().toISOString();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.1-flash-lite",
       contents: `Current date and time is ${now}. Parse the following user request into a structured reminder task:
 "${prompt}"
 
@@ -470,7 +650,7 @@ app.post("/api/documents/upload", async (req, res) => {
 
     // Summarize document with Gemini
     const summaryResponse = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.1-flash-lite",
       contents: `Provide a concise 2-sentence summary and 3 key tags for this document text:
 
 "${content.slice(0, 3000)}"`,
@@ -573,7 +753,7 @@ app.post("/api/documents/search", async (req, res) => {
       .join("\n\n");
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.1-flash-lite",
       contents: `You are an intelligent document search assistant. Answer the user's search query accurately using ONLY the provided Document Knowledge Base below. Cite specific documents and quote relevant snippets.
 
 USER SEARCH QUERY: "${query}"
