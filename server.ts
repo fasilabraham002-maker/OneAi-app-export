@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -8,6 +9,11 @@ import fs from "fs";
 
 const app = express();
 const PORT = 3000;
+
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 
 app.use(express.json({ limit: "50mb" }));
 
