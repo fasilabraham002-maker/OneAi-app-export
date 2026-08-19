@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
 import { UserCheck, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
@@ -98,318 +99,88 @@ export default function App() {
     }
   };
 
-  // Voice recognition setup
-  const toggleVoiceListening = () => {
-    if (isVoiceListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // Recognition may already be stopped.
-        }
-      }
-      setIsVoiceListening(false);
-      return;
-    }
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert(
-        'Voice recognition is not available in this browser. Please use Chrome and allow microphone access for OneAI.'
-      );
-      return;
-    }
-
+  // Native Android voice recognition
+  const toggleVoiceListening = async () => {
     try {
-      const recognition = new SpeechRecognition();
-
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        console.log('OneAI voice recognition started');
-        setIsVoiceListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-
-        transcript = transcript.trim();
-
-        if (transcript) {
-          setVoiceText(transcript);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('OneAI speech recognition error:', event.error);
-
-        if (
-          event.error === 'not-allowed' ||
-          event.error === 'service-not-allowed'
-        ) {
-          alert(
-            'Chrome blocked microphone access. Please allow microphone access for OneAI in Chrome Site Settings.'
-          );
-        } else if (event.error === 'audio-capture') {
-          alert(
-            'OneAI could not access the microphone. Check that no other app is using the microphone.'
-          );
-        } else {
-          alert(
-            `OneAI voice recognition error: ${event.error || 'unknown error'}`
-          );
-        }
-
+      if (isVoiceListening) {
+        await SpeechRecognition.stop();
         setIsVoiceListening(false);
-      };
+        return;
+      }
 
-      recognition.onend = () => {
-        console.log('OneAI voice recognition ended');
-        setIsVoiceListening(false);
-      };
+      const permission = await SpeechRecognition.requestPermissions();
 
-      recognitionRef.current = recognition;
+      if (permission.speechRecognition !== 'granted') {
+        alert(
+          'OneAI needs speech recognition permission. Please allow it in Android app permissions.'
+        );
+        return;
+      }
+
       setVoiceText('');
 
-      recognition.start();
-    } catch (err: any) {
-      console.error('Speech recognition start failed:', err);
+      await SpeechRecognition.start({
+        language: 'en-US',
+        maxResults: 3,
+        partialResults: true,
+        popup: false,
+      });
+    } catch (error) {
+      console.error('OneAI native voice recognition error:', error);
       setIsVoiceListening(false);
 
       alert(
-        'OneAI could not start voice recognition. Please make sure Chrome microphone access is allowed and try again.'
+        'OneAI could not start voice recognition. Please check speech recognition permission and try again.'
       );
     }
   };
 
-  // Chat message submit handler
-  const handleSendMessage = async (text: string, attachedDocs: string[], systemInstruction?: string) => {
-    if (chatLoading) {
-      console.log("OneAI: chat request already in progress.");
-      return;
-    }
+  useEffect(() => {
+    let resultListener: any;
+    let stateListener: any;
+    let errorListener: any;
 
-    const userMsg: ChatMessage = {
-      id: `m-${Date.now()}`,
-      sender: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
+    const setupVoiceListeners = async () => {
+      resultListener = await SpeechRecognition.addListener(
+        'partialResults',
+        (data: any) => {
+          const matches = data.matches || [];
+
+          if (matches.length > 0) {
+            setVoiceText(matches[0]);
+          }
+        },
+      );
+
+      stateListener = await SpeechRecognition.addListener(
+        'listeningState',
+        (data: any) => {
+          setIsVoiceListening(data.status === 'started');
+        },
+      );
+
+      errorListener = await SpeechRecognition.addListener(
+        'error',
+        (data: any) => {
+          console.error('OneAI native speech recognition error:', data);
+
+          setIsVoiceListening(false);
+
+          if (data?.message) {
+            alert(`OneAI voice recognition error: ${data.message}`);
+          }
+        },
+      );
     };
 
-    setMessages((prev) => [...prev, userMsg]);
-    setChatLoading(true);
+    setupVoiceListeners();
 
-    try {
-      const history = messages.slice(-8); // Send last 8 messages for memory context
-      const res = await fetch(`${API_BASE_URL}/api/chat/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          message: text,
-          history,
-          attachedDocIds: attachedDocs,
-          systemInstruction,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'AI generation failed');
-      }
-
-      if (!res.body) {
-        throw new Error('Streaming response is not supported by this browser.');
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let streamedText = '';
-      let sources: ChatMessage['sources'] = [];
-
-      const aiMessageId = `m-ai-${Date.now()}`;
-
-      // Add an empty assistant message immediately so the UI can update
-      // as OneAI sends each chunk.
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: aiMessageId,
-          sender: 'assistant',
-          content: '',
-          timestamp: new Date().toISOString(),
-          sources: [],
-        },
-      ]);
-
-      while (true) {
-        const { value, done } = await reader.read();
-
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine) continue;
-
-          let event;
-          try {
-            event = JSON.parse(trimmedLine);
-          } catch (parseError) {
-            console.warn('OneAI stream parse warning:', trimmedLine);
-            continue;
-          }
-
-          if (event.type === 'chunk') {
-            streamedText += event.text;
-
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === aiMessageId
-                  ? { ...msg, content: streamedText }
-                  : msg
-              )
-            );
-          } else if (event.type === 'done') {
-            sources = event.sources || [];
-
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === aiMessageId
-                  ? {
-                      ...msg,
-                      content:
-                        event.reply ||
-                        streamedText ||
-                        'I processed your request, but received an empty response from OneAI.',
-                      sources,
-                    }
-                  : msg
-              )
-            );
-          } else if (event.type === 'error') {
-            throw new Error(event.error || 'OneAI generation failed');
-          }
-        }
-      }
-    } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: `m-err-${Date.now()}`,
-        sender: 'assistant',
-        content: `Sorry, I encountered an issue: ${err.message || 'Server error'}. Please try again.`,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  // Document upload & delete handlers
-  const handleUploadDocument = async (
-    title: string,
-    fileName: string,
-    fileType: string,
-    content: string
-  ) => {
-    const res = await fetch(`${API_BASE_URL}/api/documents/upload`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ title, fileName, fileType, content }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to upload document');
-
-    setDocuments((prev) => [data.document, ...prev]);
-  };
-
-  const handleDeleteDocument = async (id: string) => {
-    await fetch(`${API_BASE_URL}/api/documents/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
-  };
-
-  // Reminder handlers
-  const handleAddReminder = (reminder: Reminder) => {
-    setReminders((prev) => [reminder, ...prev]);
-  };
-
-  const handleUpdateReminder = async (updated: Reminder) => {
-    setReminders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    await fetch(`${API_BASE_URL}/api/reminders/${updated.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify(updated),
-    });
-  };
-
-  const handleDeleteReminder = async (id: string) => {
-    setReminders((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`${API_BASE_URL}/api/reminders/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-  };
-
-  // Global Quick Search trigger
-  const handleGlobalSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!globalSearch.trim()) return;
-
-    if (activeTab !== 'documents') {
-      setActiveTab('documents');
-    }
-  };
-
-  // Auth & Profile actions
-  const handleAuthSuccess = (loggedUser: User, token: string) => {
-    console.log("AUTH SUCCESS:", loggedUser.email);
-
-    setUser(loggedUser);
-    setAuthToken(token);
-
-    localStorage.setItem("oneai_auth_token", token);
-    localStorage.setItem("oneai_user", JSON.stringify(loggedUser));
-
-    setIsAuthModalOpen(false);
-    setIsProfileModalOpen(false);
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    setAuthToken('');
-    setDocuments([]);
-    setReminders([]);
-
-    localStorage.removeItem('oneai_auth_token');
-    localStorage.removeItem('oneai_user');
-  };
+    return () => {
+      resultListener?.remove();
+      stateListener?.remove();
+      errorListener?.remove();
+    };
+  }, []);
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-slate-950 font-sans text-slate-100 antialiased">
