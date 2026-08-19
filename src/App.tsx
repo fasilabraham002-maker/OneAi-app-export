@@ -27,6 +27,23 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
+  // Restore saved authentication session on app startup
+  useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem('oneai_auth_token');
+      const savedUser = localStorage.getItem('oneai_user');
+
+      if (savedToken && savedUser) {
+        setAuthToken(savedToken);
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (error) {
+      console.error('Failed to restore authentication session:', error);
+      localStorage.removeItem('oneai_auth_token');
+      localStorage.removeItem('oneai_user');
+    }
+  }, []);
+
   // App data state
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -82,7 +99,7 @@ export default function App() {
   };
 
   // Voice recognition setup
-  const toggleVoiceListening = async () => {
+  const toggleVoiceListening = () => {
     if (isVoiceListening) {
       if (recognitionRef.current) {
         try {
@@ -106,22 +123,7 @@ export default function App() {
       return;
     }
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      alert(
-        'Microphone access is not available. Please use Chrome over HTTPS.'
-      );
-      return;
-    }
-
     try {
-      // Ask Chrome for microphone permission before starting recognition.
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-
-      // Release the temporary permission-check stream.
-      stream.getTracks().forEach((track) => track.stop());
-
       const recognition = new SpeechRecognition();
 
       recognition.continuous = false;
@@ -156,11 +158,15 @@ export default function App() {
           event.error === 'service-not-allowed'
         ) {
           alert(
-            'Microphone access was denied. Open Chrome Site Settings for OneAI and set Microphone to Allow.'
+            'Chrome blocked microphone access. Please allow microphone access for OneAI in Chrome Site Settings.'
           );
         } else if (event.error === 'audio-capture') {
           alert(
-            'OneAI could not access the microphone. Check that another app is not using it.'
+            'OneAI could not access the microphone. Check that no other app is using the microphone.'
+          );
+        } else {
+          alert(
+            `OneAI voice recognition error: ${event.error || 'unknown error'}`
           );
         }
 
@@ -175,37 +181,14 @@ export default function App() {
       recognitionRef.current = recognition;
       setVoiceText('');
 
-      // Start only after Chrome confirms microphone access.
-      // Give Chrome Android a moment after microphone permission is granted.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    try {
       recognition.start();
-    } catch (startErr) {
-      console.error('Speech recognition start failed:', startErr);
-      setIsVoiceListening(false);
-      alert(
-        'OneAI could not start voice recognition. Please tap the microphone again and make sure Chrome microphone access is allowed.'
-      );
-    }
     } catch (err: any) {
-      console.error('Failed to access microphone:', err);
+      console.error('Speech recognition start failed:', err);
       setIsVoiceListening(false);
 
-      if (
-        err?.name === 'NotAllowedError' ||
-        err?.name === 'PermissionDeniedError'
-      ) {
-        alert(
-          'Microphone access was denied. Open Chrome Site Settings for OneAI and set Microphone to Allow.'
-        );
-      } else if (err?.name === 'NotFoundError') {
-        alert('No microphone was found on this device.');
-      } else {
-        alert(
-          'OneAI could not access your microphone. Please check Chrome microphone permissions and try again.'
-        );
-      }
+      alert(
+        'OneAI could not start voice recognition. Please make sure Chrome microphone access is allowed and try again.'
+      );
     }
   };
 
@@ -423,6 +406,9 @@ export default function App() {
     setAuthToken('');
     setDocuments([]);
     setReminders([]);
+
+    localStorage.removeItem('oneai_auth_token');
+    localStorage.removeItem('oneai_user');
   };
 
   return (
