@@ -139,43 +139,63 @@ export default function App() {
     let resultListener: any;
     let stateListener: any;
     let errorListener: any;
+    let cancelled = false;
 
     const setupVoiceListeners = async () => {
-      resultListener = await SpeechRecognition.addListener(
-        'partialResults',
-        (data: any) => {
-          const matches = data.matches || [];
+      try {
+        resultListener = await SpeechRecognition.addListener(
+          'partialResults',
+          (data: any) => {
+            if (cancelled) return;
 
-          if (matches.length > 0) {
-            setVoiceText(matches[0]);
-          }
-        },
-      );
+            const matches = data?.matches || [];
 
-      stateListener = await SpeechRecognition.addListener(
-        'listeningState',
-        (data: any) => {
-          setIsVoiceListening(data.status === 'started');
-        },
-      );
+            if (matches.length > 0) {
+              setVoiceText(matches[0]);
+            }
+          },
+        );
 
-      errorListener = await SpeechRecognition.addListener(
-        'error',
-        (data: any) => {
-          console.error('OneAI native speech recognition error:', data);
+        stateListener = await SpeechRecognition.addListener(
+          'listeningState',
+          (data: any) => {
+            if (cancelled) return;
 
-          setIsVoiceListening(false);
+            setIsVoiceListening(data?.status === 'started');
+          },
+        );
 
-          if (data?.message) {
-            alert(`OneAI voice recognition error: ${data.message}`);
-          }
-        },
-      );
+        errorListener = await SpeechRecognition.addListener(
+          'error',
+          (data: any) => {
+            if (cancelled) return;
+
+            console.error(
+              'OneAI native speech recognition error:',
+              data,
+            );
+
+            setIsVoiceListening(false);
+
+            if (data?.message) {
+              console.warn(
+                `OneAI voice recognition error: ${data.message}`,
+              );
+            }
+          },
+        );
+      } catch (error) {
+        console.warn(
+          'OneAI speech listeners could not be initialized:',
+          error,
+        );
+      }
     };
 
     setupVoiceListeners();
 
     return () => {
+      cancelled = true;
       resultListener?.remove();
       stateListener?.remove();
       errorListener?.remove();
