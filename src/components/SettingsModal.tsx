@@ -109,28 +109,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return;
       }
 
-      if (navigator.permissions) {
-        try {
-          const permission =
-            await navigator.permissions.query({
-              name: 'microphone' as PermissionName,
-            });
+      setMicStatus('unknown');
 
-          setMicStatus(
-            permission.state === 'granted'
-              ? 'allowed'
-              : permission.state === 'denied'
-                ? 'blocked'
-                : 'unknown',
-          );
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
 
-          return;
-        } catch {
-          setMicStatus('unknown');
-        }
+        setMicStatus('allowed');
+        update('microphone', true);
+
+        stream.getTracks().forEach((track) => track.stop());
+      } catch {
+        setMicStatus('blocked');
+        update('microphone', false);
       }
     } catch {
       setMicStatus('blocked');
+      update('microphone', false);
     }
   }
 
@@ -270,9 +266,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <AlertTriangle className="h-4 w-4 text-red-400" />
 
                     <p className="text-xs leading-5 text-red-300">
-                      Chrome is blocking microphone access.
-                      Allow microphone access for OneAI in
-                      Chrome Site controls.
+                      Microphone access is blocked.
+                      Allow microphone permission for OneAI in
+                      Android Settings, then tap Test Microphone again.
                     </p>
                   </div>
                 )}
