@@ -169,8 +169,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="relative z-[101] flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 p-5">
@@ -191,8 +202,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="relative z-[102] rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
             aria-label="Close settings"
           >
             <X className="h-5 w-5" />
@@ -493,8 +505,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500"
+            className="relative z-[102] rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500"
           >
             Done
           </button>

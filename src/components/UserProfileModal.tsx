@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import {
   ShieldCheck,
   Lock,
@@ -87,25 +88,48 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     try {
       setMicTesting(true);
 
-      const permission = await SpeechRecognition.checkPermissions();
+      let permission = await SpeechRecognition.checkPermissions();
 
       if (permission.speechRecognition !== 'granted') {
-        const requested = await SpeechRecognition.requestPermissions();
+        permission = await SpeechRecognition.requestPermissions();
+      }
 
-        if (requested.speechRecognition !== 'granted') {
-          setMicrophoneAllowed(false);
-          alert(
-            'OneAI microphone permission is not allowed. Open Android Settings → Apps → OneAI → Permissions → Microphone → Allow.'
-          );
-          setMicTesting(false);
-          return;
-        }
+      if (permission.speechRecognition !== 'granted') {
+        setMicrophoneAllowed(false);
+        setMicTesting(false);
+
+        alert(
+          'OneAI needs microphone permission. Open Android Settings → Apps → OneAI → Permissions → Microphone → Allow.'
+        );
+        return;
       }
 
       setMicrophoneAllowed(true);
-      setMicTesting(false);
+
+      await SpeechRecognition.start({
+        language: 'en-US',
+        maxResults: 1,
+        partialResults: false,
+      });
+
+      setTimeout(async () => {
+        try {
+          await SpeechRecognition.stop();
+        } catch (error) {
+          console.warn('Speech recognition already stopped:', error);
+        } finally {
+          setMicTesting(false);
+        }
+      }, 1500);
     } catch (error) {
       console.error('Microphone test failed:', error);
+
+      try {
+        await SpeechRecognition.stop();
+      } catch {
+        // Recognition may not have started.
+      }
+
       setMicTesting(false);
       setMicrophoneAllowed(false);
 
@@ -115,22 +139,37 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
   };
 
-  const testSpeech = () => {
-    if (!('speechSynthesis' in window)) {
-      alert('Text-to-Speech is not supported by this browser.');
-      return;
+  const testSpeech = async () => {
+    try {
+      await TextToSpeech.stop();
+
+      await TextToSpeech.speak({
+        text: 'Hello. This is OneAI voice testing.',
+        lang: 'en-US',
+        rate: speechRate,
+        volume: 1.0,
+      });
+    } catch (error) {
+      console.error('Native text-to-speech failed:', error);
+      alert('OneAI could not start text-to-speech on this device.');
+    }
+  };
+
+  const closeModal = async () => {
+    try {
+      await SpeechRecognition.stop();
+    } catch {
+      // Recognition may already be stopped.
     }
 
-    window.speechSynthesis.cancel();
+    try {
+      await TextToSpeech.stop();
+    } catch {
+      // TTS may already be stopped.
+    }
 
-    const speech = new SpeechSynthesisUtterance(
-      'Hello. This is OneAI voice testing.'
-    );
-
-    speech.rate = speechRate;
-    speech.volume = 1;
-
-    window.speechSynthesis.speak(speech);
+    setMicTesting(false);
+    onClose();
   };
 
   const toggleDarkMode = () => {
@@ -143,11 +182,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          closeModal();
         }
       }}
     >
-      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
+      <div
+        className="relative z-[101] flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <div className="flex items-center gap-3">
@@ -168,7 +211,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            className="relative z-[102] rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
@@ -450,7 +493,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
               <div className="flex items-center gap-2 pt-2 text-[11px] text-emerald-400">
                 <CheckCircle2 className="h-4 w-4" />
-                Your browser controls sensitive device permissions.
+                OneAI uses native Android permissions for device access.
               </div>
             </div>
           </section>
@@ -462,7 +505,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             type="button"
             onClick={() => {
               onLogout();
-              onClose();
+              closeModal();
             }}
             className="flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-400 transition hover:bg-red-500/20"
           >
@@ -473,7 +516,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-indigo-500"
+            className="relative z-[102] rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-indigo-500"
           >
             Done
           </button>
