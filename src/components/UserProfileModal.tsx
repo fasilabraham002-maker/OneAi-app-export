@@ -80,7 +80,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md"
-      onMouseDown={(event) => {
+      onClick={(event) => {
         if (event.target === event.currentTarget) {
           closeModal();
         }
@@ -88,8 +88,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     >
       <div
         className="relative z-[101] flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
