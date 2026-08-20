@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { SpeechRecognition } from "@capgo/capacitor-speech-recognition";
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
 import { UserCheck, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
@@ -98,99 +99,106 @@ export default function App() {
     }
   };
 
-  // Voice recognition setup
-  const toggleVoiceListening = () => {
-    if (isVoiceListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // Recognition may already be stopped.
+  // Native Android voice recognition
+  const toggleVoiceListening = async () => {
+    try {
+      // Stop current recognition
+      if (isVoiceListening) {
+        await SpeechRecognition.stop();
+        setIsVoiceListening(false);
+        return;
+      }
+
+      // Check current Android permission
+      const current = await SpeechRecognition.checkPermissions();
+
+      console.log("OneAI microphone permission:", current);
+
+      // Ask Android to show the permission dialog when needed
+      if (current.speechRecognition !== "granted") {
+        const permission = await SpeechRecognition.requestPermissions();
+
+        console.log("OneAI microphone permission result:", permission);
+
+        if (permission.speechRecognition !== "granted") {
+          setIsVoiceListening(false);
+
+          alert(
+            "OneAI needs microphone permission to use Voice Assistant. Please tap Allow when Android asks for permission."
+          );
+
+          return;
         }
       }
-      setIsVoiceListening(false);
-      return;
-    }
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+      setVoiceText("");
+      setIsVoiceListening(true);
 
-    if (!SpeechRecognition) {
-      alert(
-        'Voice recognition is not available in this browser. Please use Chrome and allow microphone access for OneAI.'
-      );
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        console.log('OneAI voice recognition started');
-        setIsVoiceListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-
-        transcript = transcript.trim();
-
-        if (transcript) {
-          setVoiceText(transcript);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('OneAI speech recognition error:', event.error);
-
-        if (
-          event.error === 'not-allowed' ||
-          event.error === 'service-not-allowed'
-        ) {
-          alert(
-            'Chrome blocked microphone access. Please allow microphone access for OneAI in Chrome Site Settings.'
-          );
-        } else if (event.error === 'audio-capture') {
-          alert(
-            'OneAI could not access the microphone. Check that no other app is using the microphone.'
-          );
-        } else {
-          alert(
-            `OneAI voice recognition error: ${event.error || 'unknown error'}`
-          );
-        }
-
-        setIsVoiceListening(false);
-      };
-
-      recognition.onend = () => {
-        console.log('OneAI voice recognition ended');
-        setIsVoiceListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      setVoiceText('');
-
-      recognition.start();
-    } catch (err: any) {
-      console.error('Speech recognition start failed:', err);
+      // Start native Android speech recognition
+      await SpeechRecognition.start({
+        language: "en-US",
+        maxResults: 3,
+        partialResults: true,
+        popup: false,
+      });
+    } catch (error) {
+      console.error("OneAI native voice error:", error);
       setIsVoiceListening(false);
 
       alert(
-        'OneAI could not start voice recognition. Please make sure Chrome microphone access is allowed and try again.'
+        "OneAI could not start Voice Assistant. Please make sure microphone permission is allowed."
       );
     }
   };
+
+  useEffect(() => {
+    let resultListener: any;
+    let stateListener: any;
+    let errorListener: any;
+
+    const setupVoiceListeners = async () => {
+      try {
+        resultListener = await SpeechRecognition.addListener(
+          "partialResults",
+          (data: any) => {
+            const matches = data?.matches || [];
+
+            if (matches.length > 0) {
+              setVoiceText(matches[0]);
+            }
+          }
+        );
+
+        stateListener = await SpeechRecognition.addListener(
+          "listeningState",
+          (data: any) => {
+            setIsVoiceListening(data?.status === "started");
+          }
+        );
+
+        errorListener = await SpeechRecognition.addListener(
+          "error",
+          (data: any) => {
+            console.warn("OneAI native speech error:", data);
+            setIsVoiceListening(false);
+          }
+        );
+      } catch (error) {
+        console.warn(
+          "OneAI speech listeners could not be initialized:",
+          error
+        );
+      }
+    };
+
+    setupVoiceListeners();
+
+    return () => {
+      resultListener?.remove();
+      stateListener?.remove();
+      errorListener?.remove();
+    };
+  }, []);
 
   // Chat message submit handler
   const handleSendMessage = async (text: string, attachedDocs: string[], systemInstruction?: string) => {
