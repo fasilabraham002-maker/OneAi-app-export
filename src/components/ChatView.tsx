@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, UploadedDocument } from '../types';
 import { Send, Bot, User as UserIcon, Mic, Volume2, VolumeX, Sparkles, FileText, Check, Paperclip, RefreshCw, Layers } from 'lucide-react';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -62,123 +63,35 @@ export const ChatView: React.FC<ChatViewProps> = ({
     );
   };
 
-  const voicesNotReady = (synth: SpeechSynthesis) => {
-    return synth.getVoices().length === 0;
-  };
-
-  // Warm up Android Chrome's speech engine early.
-  // This prevents the first real speech from waiting for voice initialization.
-  useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-
-    const synth = window.speechSynthesis;
-
-    synth.getVoices();
-
-    const warmupVoice = () => {
-      const voices = synth.getVoices();
-      if (!voices.length) return;
-
-      try {
-        synth.cancel();
-
-        const warmup = new SpeechSynthesisUtterance("");
-        warmup.volume = 0;
-        warmup.rate = 1;
-        warmup.pitch = 1;
-        warmup.voice =
-          voices.find((v) => v.lang.toLowerCase().startsWith("en")) ||
-          voices[0];
-
-        synth.speak(warmup);
-
-        window.setTimeout(() => {
-          synth.cancel();
-        }, 50);
-      } catch (error) {
-        console.warn("OneAI TTS warmup failed:", error);
-      }
-    };
-
-    warmupVoice();
-
-    if (voicesNotReady(synth)) {
-      synth.addEventListener("voiceschanged", warmupVoice, { once: true });
-    }
-
-    return () => {
-      synth.cancel();
-    };
-  }, []);
-
-  const handleSpeakText = (msgId: string, text: string) => {
-    if (!("speechSynthesis" in window)) {
-      alert("Speech synthesis is not supported in this browser.");
-      return;
-    }
-
-    const synth = window.speechSynthesis;
-
-    // Stop the current speech immediately when the same message is tapped.
-    if (speakingMessageId === msgId) {
-      synth.cancel();
-      setSpeakingMessageId(null);
-      return;
-    }
-
-    // Cancel anything already queued.
-    synth.cancel();
-
-    // Keep the text clean and avoid an unnecessarily large utterance.
+  const handleSpeakText = async (msgId: string, text: string) => {
     const cleanText = text.trim();
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-
-    // Responsive settings for Android Chrome.
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-
-    // Use an already available voice when possible.
-    const voices = synth.getVoices();
-    const preferredVoice =
-      voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ||
-      voices.find((voice) => voice.default);
-
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-      utterance.lang = preferredVoice.lang;
-    } else {
-      utterance.lang = "en-US";
-    }
-
-    utterance.onstart = () => {
-      console.log("OneAI TTS started");
-      setSpeakingMessageId(msgId);
-    };
-
-    utterance.onend = () => {
-      setSpeakingMessageId(null);
-    };
-
-    utterance.onerror = (event) => {
-      console.warn("OneAI TTS error:", event.error);
-      setSpeakingMessageId(null);
-    };
-
-    // Start immediately.
-    setSpeakingMessageId(msgId);
-    console.log("OneAI TTS speak() called:", new Date().toISOString());
-    synth.speak(utterance);
-
-    // Android Chrome sometimes pauses newly queued speech.
-    window.setTimeout(() => {
-      if (synth.speaking && synth.paused) {
-        synth.resume();
+    try {
+      if (speakingMessageId === msgId) {
+        await TextToSpeech.stop();
+        setSpeakingMessageId(null);
+        return;
       }
-    }, 100);
-  };
+
+      await TextToSpeech.stop();
+      setSpeakingMessageId(msgId);
+
+      await TextToSpeech.speak({
+        text: cleanText,
+        lang: "en-US",
+        rate: 1.0,
+        pitch: 1.0,
+        volume: 1.0,
+      });
+
+      setSpeakingMessageId(null);
+    } catch (error) {
+      console.error("OneAI native TTS error:", error);
+      setSpeakingMessageId(null);
+      alert("OneAI could not start text-to-speech.");
+    }
+  };;
 
   const samplePrompts = [
     'Analyze my Q3 AI Roadmap document and highlight top metrics',

@@ -1,6 +1,5 @@
 
 import React, { useEffect, useState } from 'react';
-import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import {
   Settings,
   X,
@@ -25,7 +24,6 @@ interface SettingsModalProps {
 type Theme = 'dark' | 'light' | 'system';
 
 interface SettingsState {
-  microphone: boolean;
   readAloud: boolean;
   autoRead: boolean;
   volume: number;
@@ -41,7 +39,6 @@ interface SettingsState {
 const STORAGE_KEY = 'oneai-settings';
 
 const DEFAULT_SETTINGS: SettingsState = {
-  microphone: true,
   readAloud: true,
   autoRead: false,
   volume: 80,
@@ -73,14 +70,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [settings, setSettings] =
     useState<SettingsState>(DEFAULT_SETTINGS);
 
-  const [micStatus, setMicStatus] = useState<
-    'unknown' | 'allowed' | 'blocked'
-  >('unknown');
-
   useEffect(() => {
     if (isOpen) {
       setSettings(loadSettings());
-      checkMicrophone();
     }
   }, [isOpen]);
 
@@ -102,43 +94,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       [key]: value,
     }));
   };
-
-  async function checkMicrophone() {
-    try {
-      const permission = await SpeechRecognition.checkPermissions();
-      const allowed = permission.speechRecognition === 'granted';
-
-      setMicStatus(allowed ? 'allowed' : 'blocked');
-      update('microphone', allowed);
-    } catch (error) {
-      console.error('Failed to check microphone permission:', error);
-      setMicStatus('blocked');
-      update('microphone', false);
-    }
-  }
-
-  async function testMicrophone() {
-    try {
-      const current = await SpeechRecognition.checkPermissions();
-
-      if (current.speechRecognition !== 'granted') {
-        const requested = await SpeechRecognition.requestPermissions();
-
-        if (requested.speechRecognition !== 'granted') {
-          setMicStatus('blocked');
-          update('microphone', false);
-          return;
-        }
-      }
-
-      setMicStatus('allowed');
-      update('microphone', true);
-    } catch (error) {
-      console.error('Microphone test failed:', error);
-      setMicStatus('blocked');
-      update('microphone', false);
-    }
-  }
 
   async function enableNotifications() {
     if (!('Notification' in window)) {
@@ -221,64 +176,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               title="Audio & Voice"
               description="Control microphone and voice features."
             >
-              <SettingRow
-                icon={<Mic className="h-4 w-4" />}
-                title="Microphone"
-                description="Allow OneAI to use your microphone."
-              >
-                <Toggle
-                  enabled={settings.microphone}
-                  onChange={(value) =>
-                    update('microphone', value)
-                  }
-                />
-              </SettingRow>
-
-              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-white">
-                      Microphone Status
-                    </p>
-
-                    <p
-                      className={`mt-1 text-xs ${
-                        micStatus === 'allowed'
-                          ? 'text-emerald-400'
-                          : micStatus === 'blocked'
-                            ? 'text-red-400'
-                            : 'text-slate-500'
-                      }`}
-                    >
-                      {micStatus === 'allowed'
-                        ? 'Microphone allowed'
-                        : micStatus === 'blocked'
-                          ? 'Microphone blocked'
-                          : 'Permission not tested'}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={testMicrophone}
-                    className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:border-indigo-500"
-                  >
-                    Test Microphone
-                  </button>
-                </div>
-
-                {micStatus === 'blocked' && (
-                  <div className="mt-3 flex gap-2 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-                    <AlertTriangle className="h-4 w-4 text-red-400" />
-
-                    <p className="text-xs leading-5 text-red-300">
-                      Microphone access is blocked.
-                      Allow microphone permission for OneAI in
-                      Android Settings, then tap Test Microphone again.
-                    </p>
-                  </div>
-                )}
-              </div>
-
               <SettingRow
                 icon={<Volume2 className="h-4 w-4" />}
                 title="Read Aloud"

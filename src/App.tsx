@@ -109,32 +109,11 @@ export default function App() {
         return;
       }
 
-      // Check current Android permission
-      const current = await SpeechRecognition.checkPermissions();
-
-      console.log("OneAI microphone permission:", current);
-
-      // Ask Android to show the permission dialog when needed
-      if (current.speechRecognition !== "granted") {
-        const permission = await SpeechRecognition.requestPermissions();
-
-        console.log("OneAI microphone permission result:", permission);
-
-        if (permission.speechRecognition !== "granted") {
-          setIsVoiceListening(false);
-
-          alert(
-            "OneAI needs microphone permission to use Voice Assistant. Please tap Allow when Android asks for permission."
-          );
-
-          return;
-        }
-      }
-
       setVoiceText("");
       setIsVoiceListening(true);
 
-      // Start native Android speech recognition
+      // Start native Android speech recognition.
+      // Android handles the required microphone access at the OS level.
       await SpeechRecognition.start({
         language: "en-US",
         maxResults: 3,
@@ -144,10 +123,6 @@ export default function App() {
     } catch (error) {
       console.error("OneAI native voice error:", error);
       setIsVoiceListening(false);
-
-      alert(
-        "OneAI could not start Voice Assistant. Please make sure microphone permission is allowed."
-      );
     }
   };
 

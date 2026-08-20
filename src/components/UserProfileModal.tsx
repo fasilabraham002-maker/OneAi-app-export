@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import {
   ShieldCheck,
@@ -43,101 +42,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     user.preferences?.reminderNotifications ?? true
   );
 
-  const [microphoneAllowed, setMicrophoneAllowed] = useState(false);
-  const [micTesting, setMicTesting] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [speechRate, setSpeechRate] = useState(1);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const checkMicrophone = async () => {
-      try {
-        const permission = await SpeechRecognition.checkPermissions();
-        setMicrophoneAllowed(permission.speechRecognition === 'granted');
-      } catch (error) {
-        console.error('Failed to check microphone permission:', error);
-        setMicrophoneAllowed(false);
-      }
-    };
-
-    checkMicrophone();
-  }, [isOpen]);
-
-  const requestMicrophone = async () => {
-    try {
-      const permission = await SpeechRecognition.requestPermissions();
-
-      if (permission.speechRecognition === 'granted') {
-        setMicrophoneAllowed(true);
-      } else {
-        setMicrophoneAllowed(false);
-        alert(
-          'OneAI needs microphone permission. Please allow Microphone for OneAI in Android Settings.'
-        );
-      }
-    } catch (error) {
-      console.error('Microphone permission error:', error);
-      setMicrophoneAllowed(false);
-    }
-  };
-
-  const testMicrophone = async () => {
-    if (micTesting) return;
-
-    try {
-      setMicTesting(true);
-
-      let permission = await SpeechRecognition.checkPermissions();
-
-      if (permission.speechRecognition !== 'granted') {
-        permission = await SpeechRecognition.requestPermissions();
-      }
-
-      if (permission.speechRecognition !== 'granted') {
-        setMicrophoneAllowed(false);
-        setMicTesting(false);
-
-        alert(
-          'OneAI needs microphone permission. Open Android Settings → Apps → OneAI → Permissions → Microphone → Allow.'
-        );
-        return;
-      }
-
-      setMicrophoneAllowed(true);
-
-      await SpeechRecognition.start({
-        language: 'en-US',
-        maxResults: 1,
-        partialResults: false,
-      });
-
-      setTimeout(async () => {
-        try {
-          await SpeechRecognition.stop();
-        } catch (error) {
-          console.warn('Speech recognition already stopped:', error);
-        } finally {
-          setMicTesting(false);
-        }
-      }, 1500);
-    } catch (error) {
-      console.error('Microphone test failed:', error);
-
-      try {
-        await SpeechRecognition.stop();
-      } catch {
-        // Recognition may not have started.
-      }
-
-      setMicTesting(false);
-      setMicrophoneAllowed(false);
-
-      alert(
-        'OneAI could not access the microphone. Check Android Settings → Apps → OneAI → Permissions → Microphone.'
-      );
-    }
-  };
 
   const testSpeech = async () => {
     try {
@@ -156,12 +62,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   };
 
   const closeModal = async () => {
-    try {
-      await SpeechRecognition.stop();
-    } catch {
-      // Recognition may already be stopped.
-    }
-
     try {
       await TextToSpeech.stop();
     } catch {
@@ -247,81 +147,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           </section>
 
-          {/* Microphone */}
-          <section className="mt-5">
-            <div className="mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Voice & Microphone
-              </h3>
-            </div>
-
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                      microphoneAllowed
-                        ? 'bg-emerald-500/10'
-                        : 'bg-amber-500/10'
-                    }`}
-                  >
-                    {microphoneAllowed ? (
-                      <Mic className="h-5 w-5 text-emerald-400" />
-                    ) : (
-                      <MicOff className="h-5 w-5 text-amber-400" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">
-                          Microphone Access
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-400">
-                          {microphoneAllowed
-                            ? 'Microphone permission is enabled.'
-                            : 'Allow OneAI to use your microphone for voice features.'}
-                        </p>
-                      </div>
-
-                      <span
-                        className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold ${
-                          microphoneAllowed
-                            ? 'bg-emerald-500/10 text-emerald-400'
-                            : 'bg-amber-500/10 text-amber-400'
-                        }`}
-                      >
-                        {microphoneAllowed ? 'ALLOWED' : 'NOT ALLOWED'}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={requestMicrophone}
-                        className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-500"
-                      >
-                        Allow Microphone
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={testMicrophone}
-                        disabled={micTesting}
-                        className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-indigo-500 disabled:opacity-50"
-                      >
-                        <Mic className="h-3.5 w-3.5" />
-                        {micTesting ? 'Testing...' : 'Test Microphone'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* TTS */}
+          {/* TTS */}
               <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4">
                 <div className="flex items-center gap-3">
                   <Volume2 className="h-5 w-5 text-indigo-400" />
@@ -394,8 +220,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   />
                 </div>
               </div>
-            </div>
-          </section>
 
           {/* Workspace */}
           <section id="workspace-preferences" className="mt-5">
