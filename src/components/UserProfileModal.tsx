@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import {
   ShieldCheck,
   Lock,
@@ -51,71 +52,32 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
     const checkMicrophone = async () => {
       try {
-        if (!navigator.permissions) return;
-
-        const permission = await navigator.permissions.query({
-          name: 'microphone' as PermissionName,
-        });
-
-        setMicrophoneAllowed(permission.state === 'granted');
-
-        permission.onchange = () => {
-          setMicrophoneAllowed(permission.state === 'granted');
-        };
-      } catch {
-        // Some browsers do not support microphone permission queries.
+        const permission = await SpeechRecognition.checkPermissions();
+        setMicrophoneAllowed(permission.speechRecognition === 'granted');
+      } catch (error) {
+        console.error('Failed to check microphone permission:', error);
+        setMicrophoneAllowed(false);
       }
     };
 
     checkMicrophone();
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen || !initialSection) return;
-
-    const sectionId =
-      initialSection === 'workspace'
-        ? 'workspace-preferences'
-        : 'security-encryption';
-
-    const timer = window.setTimeout(() => {
-      const target = document.getElementById(sectionId);
-      const container = target?.closest('.overflow-y-auto') as HTMLElement | null;
-
-      if (!target || !container) return;
-
-      const top =
-        target.getBoundingClientRect().top -
-        container.getBoundingClientRect().top +
-        container.scrollTop -
-        12;
-
-      container.scrollTo({
-        top: Math.max(0, top),
-        behavior: 'smooth',
-      });
-    }, 50);
-
-    return () => window.clearTimeout(timer);
-  }, [isOpen, initialSection]);
-
-  if (!isOpen) return null;
-
   const requestMicrophone = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
+      const permission = await SpeechRecognition.requestPermissions();
 
-      setMicrophoneAllowed(true);
-
-      stream.getTracks().forEach((track) => track.stop());
+      if (permission.speechRecognition === 'granted') {
+        setMicrophoneAllowed(true);
+      } else {
+        setMicrophoneAllowed(false);
+        alert(
+          'OneAI needs microphone permission. Please allow Microphone for OneAI in Android Settings.'
+        );
+      }
     } catch (error) {
       console.error('Microphone permission error:', error);
-
-      alert(
-        'Microphone access was denied. Please open Chrome Site Settings for OneAI and allow Microphone access.'
-      );
+      setMicrophoneAllowed(false);
     }
   };
 
@@ -125,56 +87,30 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     try {
       setMicTesting(true);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
+      const permission = await SpeechRecognition.checkPermissions();
+
+      if (permission.speechRecognition !== 'granted') {
+        const requested = await SpeechRecognition.requestPermissions();
+
+        if (requested.speechRecognition !== 'granted') {
+          setMicrophoneAllowed(false);
+          alert(
+            'OneAI microphone permission is not allowed. Open Android Settings → Apps → OneAI → Permissions → Microphone → Allow.'
+          );
+          setMicTesting(false);
+          return;
+        }
+      }
 
       setMicrophoneAllowed(true);
-
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as typeof window & {
-          webkitAudioContext?: typeof AudioContext;
-        }).webkitAudioContext;
-
-      if (AudioContextClass) {
-        const audioContext = new AudioContextClass();
-        const analyser = audioContext.createAnalyser();
-        const source = audioContext.createMediaStreamSource(stream);
-
-        source.connect(analyser);
-
-        const data = new Uint8Array(analyser.fftSize);
-
-        const started = Date.now();
-
-        const checkLevel = () => {
-          analyser.getByteTimeDomainData(data);
-
-          const elapsed = Date.now() - started;
-
-          if (elapsed < 1200) {
-            requestAnimationFrame(checkLevel);
-          } else {
-            stream.getTracks().forEach((track) => track.stop());
-            audioContext.close();
-            setMicTesting(false);
-          }
-        };
-
-        checkLevel();
-      } else {
-        setTimeout(() => {
-          stream.getTracks().forEach((track) => track.stop());
-          setMicTesting(false);
-        }, 1200);
-      }
+      setMicTesting(false);
     } catch (error) {
       console.error('Microphone test failed:', error);
       setMicTesting(false);
+      setMicrophoneAllowed(false);
 
       alert(
-        'Microphone test failed. Please allow microphone access in Chrome Site Settings.'
+        'OneAI could not access the microphone. Check Android Settings → Apps → OneAI → Permissions → Microphone.'
       );
     }
   };
@@ -340,13 +276,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-start gap-2 rounded-xl bg-slate-800/60 p-3 text-[11px] text-slate-400">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" />
-                  <span>
-                    Chrome controls the actual microphone permission. OneAI
-                    cannot override a permission that Chrome has blocked.
-                  </span>
-                </div>
               </div>
 
               {/* TTS */}

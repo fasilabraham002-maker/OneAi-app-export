@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import {
   Settings,
   X,
@@ -104,27 +105,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   async function checkMicrophone() {
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setMicStatus('blocked');
-        return;
-      }
+      const permission = await SpeechRecognition.checkPermissions();
+      const allowed = permission.speechRecognition === 'granted';
 
-      setMicStatus('unknown');
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-
-        setMicStatus('allowed');
-        update('microphone', true);
-
-        stream.getTracks().forEach((track) => track.stop());
-      } catch {
-        setMicStatus('blocked');
-        update('microphone', false);
-      }
-    } catch {
+      setMicStatus(allowed ? 'allowed' : 'blocked');
+      update('microphone', allowed);
+    } catch (error) {
+      console.error('Failed to check microphone permission:', error);
       setMicStatus('blocked');
       update('microphone', false);
     }
@@ -132,16 +119,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   async function testMicrophone() {
     try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+      const current = await SpeechRecognition.checkPermissions();
+
+      if (current.speechRecognition !== 'granted') {
+        const requested = await SpeechRecognition.requestPermissions();
+
+        if (requested.speechRecognition !== 'granted') {
+          setMicStatus('blocked');
+          update('microphone', false);
+          return;
+        }
+      }
 
       setMicStatus('allowed');
       update('microphone', true);
-
-      stream.getTracks().forEach((track) => track.stop());
-    } catch {
+    } catch (error) {
+      console.error('Microphone test failed:', error);
       setMicStatus('blocked');
       update('microphone', false);
     }
