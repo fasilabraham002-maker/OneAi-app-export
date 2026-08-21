@@ -8,3 +8,4 @@ coverage/
 !.env.example
 oneai-release.keystore
 android/key.properties
+keystore.base64
