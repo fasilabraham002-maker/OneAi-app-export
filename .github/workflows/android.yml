@@ -42,13 +42,42 @@ jobs:
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Check signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ONEAI_RELEASE_KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.ONEAI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ONEAI_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ONEAI_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || {
+            echo "ERROR: ONEAI_RELEASE_KEYSTORE is empty or unavailable."
+            exit 1
+          }
+
+          test -n "$KEYSTORE_PASSWORD" || {
+            echo "ERROR: ONEAI_KEYSTORE_PASSWORD is empty or unavailable."
+            exit 1
+          }
+
+          test -n "$KEY_ALIAS" || {
+            echo "ERROR: ONEAI_KEY_ALIAS is empty or unavailable."
+            exit 1
+          }
+
+          test -n "$KEY_PASSWORD" || {
+            echo "ERROR: ONEAI_KEY_PASSWORD is empty or unavailable."
+            exit 1
+          }
+
+          echo "All four signing secrets are available."
+
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ONEAI_RELEASE_KEYSTORE }}
         run: |
-          test -n "$KEYSTORE_BASE64"
           echo "$KEYSTORE_BASE64" | base64 --decode > android/oneai-release.keystore
           test -s android/oneai-release.keystore
+          echo "Release keystore restored."
 
       - name: Create signing properties
         env:
@@ -56,10 +85,6 @@ jobs:
           KEY_ALIAS: ${{ secrets.ONEAI_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ONEAI_KEY_PASSWORD }}
         run: |
-          test -n "$KEYSTORE_PASSWORD"
-          test -n "$KEY_ALIAS"
-          test -n "$KEY_PASSWORD"
-
           cat > android/key.properties <<EOF
           storeFile=oneai-release.keystore
           storePassword=$KEYSTORE_PASSWORD
@@ -67,23 +92,34 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
-          test -f android/key.properties
+          echo "key.properties created."
+          test -s android/key.properties
 
       - name: Verify signing files
         run: |
-          echo "key.properties exists:"
-          test -f android/key.properties
-          echo "release keystore exists:"
-          test -f android/oneai-release.keystore
-          echo "Signing files are present."
+          echo "Checking signing files..."
+          test -s android/key.properties
+          test -s android/oneai-release.keystore
+          echo "Signing files verified."
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
-      - name: Upload OneAI APK
+      - name: Build release AAB
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload OneAI release APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneAI-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: OneAI-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload OneAI Play Store AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneAI-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
