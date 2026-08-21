@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   Settings,
   X,
@@ -81,6 +82,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       STORAGE_KEY,
       JSON.stringify(settings),
     );
+
+    const applyTheme = (theme: Theme) => {
+      const root = document.documentElement;
+
+      if (theme === 'dark') {
+        root.classList.add('dark');
+        root.style.colorScheme = 'dark';
+      } else if (theme === 'light') {
+        root.classList.remove('dark');
+        root.style.colorScheme = 'light';
+      } else {
+        const prefersDark = window.matchMedia(
+          '(prefers-color-scheme: dark)'
+        ).matches;
+
+        root.classList.toggle('dark', prefersDark);
+        root.style.colorScheme = prefersDark ? 'dark' : 'light';
+      }
+    };
+
+    applyTheme(settings.theme);
   }, [settings]);
 
   if (!isOpen) return null;
@@ -96,18 +118,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   async function enableNotifications() {
-    if (!('Notification' in window)) {
-      alert('Browser notifications are not supported.');
-      return;
+    try {
+      const current = await LocalNotifications.checkPermissions();
+
+      const permission =
+        current.display === 'granted'
+          ? current
+          : await LocalNotifications.requestPermissions();
+
+      if (permission.display === 'granted') {
+        update('notifications', true);
+
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: 1001,
+              title: 'OneAI Notifications Enabled',
+              body: 'OneAI notifications are now enabled.',
+              schedule: {
+                at: new Date(Date.now() + 1000),
+              },
+            },
+          ],
+        });
+      } else {
+        update('notifications', false);
+        alert(
+          'Notification permission was not granted. You can enable notifications in Android Settings.'
+        );
+      }
+    } catch (error) {
+      console.error('OneAI notification permission error:', error);
+      alert('Unable to enable Android notifications.');
     }
-
-    const permission =
-      await Notification.requestPermission();
-
-    update(
-      'notifications',
-      permission === 'granted',
-    );
   }
 
   function resetSettings() {
