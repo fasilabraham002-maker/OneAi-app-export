@@ -1,4 +1,4 @@
-name: Build OneAI Android APK
+name: Build OneAI Android
 
 on:
   workflow_dispatch:
@@ -42,13 +42,43 @@ jobs:
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ONEAI_RELEASE_KEYSTORE }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/oneai-release.keystore
+
+      - name: Create signing properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ONEAI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ONEAI_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ONEAI_KEY_PASSWORD }}
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=oneai-release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload OneAI APK
+      - name: Build release AAB
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload OneAI debug APK
         uses: actions/upload-artifact@v4
         with:
           name: OneAI-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload OneAI Play Store AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneAI-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
