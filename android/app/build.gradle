@@ -49,7 +49,7 @@ android {
                 throw new GradleException("keyPassword is missing from key.properties")
             }
 
-            storeFile file(storeFilePath)
+            storeFile rootProject.file(storeFilePath)
             storePassword storePasswordValue
             keyAlias keyAliasValue
             keyPassword keyPasswordValue
