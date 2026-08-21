@@ -77,9 +77,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     document.documentElement.classList.toggle('dark', !darkMode);
   };
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md touch-auto"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           closeModal();
@@ -87,7 +91,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       }}
     >
       <div
-        className="relative z-[101] flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+        className="relative z-[101] flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl touch-auto"
+        onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
@@ -109,7 +114,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="relative z-[102] rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            className="relative z-[102] min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white touch-manipulation"
           >
             <X className="h-5 w-5" />
           </button>
@@ -163,7 +168,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setAutoTTS((value) => !value)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                  className={`relative h-11 w-14 shrink-0 rounded-full transition touch-manipulation ${
                     autoTTS ? 'bg-indigo-600' : 'bg-slate-700'
                   }`}
                 >
@@ -243,7 +248,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setNotifications((value) => !value)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                  className={`relative h-11 w-14 shrink-0 rounded-full transition touch-manipulation ${
                     notifications ? 'bg-indigo-600' : 'bg-slate-700'
                   }`}
                 >
@@ -338,7 +343,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="relative z-[102] rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-indigo-500"
+            className="relative z-[102] min-h-11 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-indigo-500 touch-manipulation"
           >
             Done
           </button>

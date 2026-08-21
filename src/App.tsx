@@ -102,26 +102,47 @@ export default function App() {
   // Native Android voice recognition
   const toggleVoiceListening = async () => {
     try {
-      // Stop current recognition
       if (isVoiceListening) {
         await SpeechRecognition.stop();
         setIsVoiceListening(false);
         return;
       }
 
-      setVoiceText("");
-      setIsVoiceListening(true);
+      const permission = await SpeechRecognition.checkPermissions();
 
-      // Start native Android speech recognition.
-      // Android handles the required microphone access at the OS level.
+      const finalPermission =
+        permission.speechRecognition === 'granted'
+          ? permission
+          : await SpeechRecognition.requestPermissions();
+
+      if (finalPermission.speechRecognition !== 'granted') {
+        console.error('OneAI voice permission denied:', finalPermission);
+        setIsVoiceListening(false);
+        alert(
+          'Microphone permission is required for OneAI Voice. Please allow microphone access in Android settings.'
+        );
+        return;
+      }
+
+      const availability = await SpeechRecognition.available();
+
+      if (!availability.available) {
+        console.error('OneAI voice recognition is unavailable.');
+        setIsVoiceListening(false);
+        alert('Voice recognition is not available on this device.');
+        return;
+      }
+
+      setVoiceText('');
+
       await SpeechRecognition.start({
-        language: "en-US",
+        language: 'en-US',
         maxResults: 3,
         partialResults: true,
         popup: false,
       });
     } catch (error) {
-      console.error("OneAI native voice error:", error);
+      console.error('OneAI native voice error:', error);
       setIsVoiceListening(false);
     }
   };
@@ -138,7 +159,11 @@ export default function App() {
           (data: any) => {
             const matches = data?.matches || [];
 
-            if (matches.length > 0) {
+            if (data?.accumulatedText) {
+              setVoiceText(data.accumulatedText);
+            } else if (data?.accumulated) {
+              setVoiceText(data.accumulated);
+            } else if (matches.length > 0) {
               setVoiceText(matches[0]);
             }
           }
@@ -147,7 +172,10 @@ export default function App() {
         stateListener = await SpeechRecognition.addListener(
           "listeningState",
           (data: any) => {
-            setIsVoiceListening(data?.status === "started");
+            setIsVoiceListening(
+              data?.state === "started" ||
+              data?.status === "started"
+            );
           }
         );
 
