@@ -187,14 +187,25 @@ export default function App() {
         resultListener = await SpeechRecognition.addListener(
           "partialResults",
           (data: any) => {
-            const matches = data?.matches || [];
+            console.log("=== ONEAI RAW SPEECH RESULT ===");
+            console.log("Raw data:", data);
+            console.log("JSON data:", JSON.stringify(data));
 
-            if (data?.accumulatedText) {
-              setVoiceText(data.accumulatedText);
-            } else if (data?.accumulated) {
-              setVoiceText(data.accumulated);
-            } else if (matches.length > 0) {
-              setVoiceText(matches[0]);
+            const matches = Array.isArray(data?.matches) ? data.matches : [];
+
+            const text =
+              typeof data?.accumulatedText === "string" && data.accumulatedText.trim()
+                ? data.accumulatedText.trim()
+                : typeof data?.accumulated === "string" && data.accumulated.trim()
+                  ? data.accumulated.trim()
+                  : typeof matches[0] === "string"
+                    ? matches[0].trim()
+                    : "";
+
+            console.log("Extracted transcript:", text);
+
+            if (text) {
+              setVoiceText(text);
             }
           }
         );
