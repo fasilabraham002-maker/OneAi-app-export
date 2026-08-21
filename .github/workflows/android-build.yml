@@ -1,4 +1,3 @@
-
 name: Build Android Release
 
 on:
@@ -48,7 +47,7 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ONEAI_RELEASE_KEYSTORE }}
         run: |
           test -n "$KEYSTORE_BASE64"
-          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > android/oneai-play-release.keystore
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode --ignore-garbage > android/oneai-play-release.keystore
           test -s android/oneai-play-release.keystore
 
       - name: Create signing properties
@@ -71,10 +70,14 @@ jobs:
           test -f android/key.properties
 
       - name: Verify signing files
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ONEAI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ONEAI_KEY_ALIAS }}
         run: |
           test -s android/oneai-play-release.keystore
           test -f android/key.properties
-          echo "Signing files are present."
+          keytool -list -keystore android/oneai-play-release.keystore -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null
+          echo "Signing files are valid."
 
       - name: Build release APK
         working-directory: android
