@@ -102,48 +102,78 @@ export default function App() {
   // Native Android voice recognition
   const toggleVoiceListening = async () => {
     try {
+      console.log("=== ONEAI VOICE DIAGNOSTIC: START ===");
+
       if (isVoiceListening) {
+        console.log("Stopping voice recognition...");
         await SpeechRecognition.stop();
         setIsVoiceListening(false);
         return;
       }
 
+      console.log("Checking speech recognition permission...");
       const permission = await SpeechRecognition.checkPermissions();
+      console.log("Initial permission:", permission);
 
       const finalPermission =
-        permission.speechRecognition === 'granted'
+        permission.speechRecognition === "granted"
           ? permission
           : await SpeechRecognition.requestPermissions();
 
-      if (finalPermission.speechRecognition !== 'granted') {
-        console.error('OneAI voice permission denied:', finalPermission);
+      console.log("Final permission:", finalPermission);
+
+      if (finalPermission.speechRecognition !== "granted") {
+        console.error("OneAI voice permission denied:", finalPermission);
         setIsVoiceListening(false);
         alert(
-          'Microphone permission is required for OneAI Voice. Please allow microphone access in Android settings.'
+          "Microphone permission is required for OneAI Voice. Please allow microphone access in Android settings."
         );
         return;
       }
 
+      console.log("Checking Android speech recognition availability...");
       const availability = await SpeechRecognition.available();
 
+      console.log("=== ONEAI VOICE AVAILABILITY ===");
+      console.log("Availability response:", availability);
+      console.log("available:", availability?.available);
+
       if (!availability.available) {
-        console.error('OneAI voice recognition is unavailable.');
+        console.error(
+          "OneAI voice recognition is unavailable:",
+          availability
+        );
         setIsVoiceListening(false);
-        alert('Voice recognition is not available on this device.');
+        alert(
+          "Android reports that speech recognition is unavailable.\n\nDiagnostic: " +
+            JSON.stringify(availability)
+        );
         return;
       }
 
-      setVoiceText('');
+      setVoiceText("");
+
+      console.log("Starting native speech recognition...");
 
       await SpeechRecognition.start({
-        language: 'en-US',
+        language: "en-US",
         maxResults: 3,
         partialResults: true,
         popup: false,
       });
+
+      console.log("=== ONEAI VOICE START REQUEST SENT ===");
     } catch (error) {
-      console.error('OneAI native voice error:', error);
+      console.error("=== ONEAI NATIVE VOICE ERROR ===");
+      console.error("Raw error:", error);
+      console.error("JSON error:", JSON.stringify(error));
+
       setIsVoiceListening(false);
+
+      alert(
+        "OneAI Voice error:\n\n" +
+          JSON.stringify(error)
+      );
     }
   };
 
