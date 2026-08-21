@@ -46,7 +46,9 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ONEAI_RELEASE_KEYSTORE }}
         run: |
+          test -n "$KEYSTORE_BASE64"
           echo "$KEYSTORE_BASE64" | base64 --decode > android/oneai-release.keystore
+          test -s android/oneai-release.keystore
 
       - name: Create signing properties
         env:
@@ -54,12 +56,26 @@ jobs:
           KEY_ALIAS: ${{ secrets.ONEAI_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ONEAI_KEY_PASSWORD }}
         run: |
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
           cat > android/key.properties <<EOF
           storeFile=oneai-release.keystore
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
           EOF
+
+          test -f android/key.properties
+
+      - name: Verify signing files
+        run: |
+          echo "key.properties exists:"
+          test -f android/key.properties
+          echo "release keystore exists:"
+          test -f android/oneai-release.keystore
+          echo "Signing files are present."
 
       - name: Build debug APK
         working-directory: android
