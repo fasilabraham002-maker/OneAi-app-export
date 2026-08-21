@@ -15,6 +15,31 @@ import SettingsModal from './components/SettingsModal';
 
 const API_BASE_URL = 'https://oneai-app-export.onrender.com';
 export default function App() {
+  // Apply OneAI theme immediately when the app starts
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('oneai-settings');
+      const theme = saved ? JSON.parse(saved).theme : 'light';
+      const root = document.documentElement;
+
+      if (theme === 'dark') {
+        root.classList.add('dark');
+        root.style.colorScheme = 'dark';
+      } else if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        root.classList.toggle('dark', prefersDark);
+        root.style.colorScheme = prefersDark ? 'dark' : 'light';
+      } else {
+        root.classList.remove('dark');
+        root.style.colorScheme = 'light';
+      }
+    } catch (error) {
+      console.error('Failed to apply startup theme:', error);
+      document.documentElement.classList.remove('dark');
+      document.documentElement.style.colorScheme = 'light';
+    }
+  }, []);
+
   // Auth state
   const [user, setUser] = useState<User | null>(null);
   const [authToken, setAuthToken] = useState<string>('');

@@ -43,7 +43,7 @@ const DEFAULT_SETTINGS: SettingsState = {
   readAloud: true,
   autoRead: false,
   volume: 80,
-  theme: 'dark',
+  theme: 'light',
   animations: true,
   autoDocuments: true,
   enterToSend: true,
