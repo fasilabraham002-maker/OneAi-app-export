@@ -132,7 +132,6 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
         const pdf = await pdfjs.getDocument({
           data: arrayBuffer,
-          disableWorker: true,
         }).promise;
 
         const pages: string[] = [];

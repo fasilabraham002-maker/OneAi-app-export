@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpeechRecognition } from "@capgo/capacitor-speech-recognition";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import { Geolocation } from "@capacitor/geolocation";
+import { Contacts } from "@capacitor-community/contacts";
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
 import { UserCheck, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
@@ -122,6 +124,68 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch reminders:', err);
+    }
+  };
+
+  // Native Android location permission
+  const requestLocationPermission = async () => {
+    try {
+      console.log("Checking location permission...");
+      const permission = await Geolocation.checkPermissions();
+      console.log("Initial location permission:", permission);
+
+      const finalPermission =
+        permission.location === "granted"
+          ? permission
+          : await Geolocation.requestPermissions();
+
+      console.log("Final location permission:", finalPermission);
+
+      if (finalPermission.location !== "granted") {
+        console.warn("OneAI location permission denied.");
+        alert(
+          "Location permission is required for this OneAI feature. Please allow location access in Android settings."
+        );
+        return false;
+      }
+
+      console.log("OneAI location permission granted.");
+      return true;
+    } catch (error) {
+      console.error("OneAI location permission error:", error);
+      alert("Unable to request location permission.");
+      return false;
+    }
+  };
+
+  // Native Android contacts permission
+  const requestContactsPermission = async () => {
+    try {
+      console.log("Checking contacts permission...");
+      const permission = await Contacts.checkPermissions();
+      console.log("Initial contacts permission:", permission);
+
+      const finalPermission =
+        permission.contacts === "granted"
+          ? permission
+          : await Contacts.requestPermissions();
+
+      console.log("Final contacts permission:", finalPermission);
+
+      if (finalPermission.contacts !== "granted") {
+        console.warn("OneAI contacts permission denied.");
+        alert(
+          "Contacts permission is required for this OneAI feature. Please allow contacts access in Android settings."
+        );
+        return false;
+      }
+
+      console.log("OneAI contacts permission granted.");
+      return true;
+    } catch (error) {
+      console.error("OneAI contacts permission error:", error);
+      alert("Unable to request contacts permission.");
+      return false;
     }
   };
 
@@ -462,7 +526,7 @@ export default function App() {
           {
             id: Math.abs(
               Array.from(reminder.id).reduce(
-                (hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0,
+                (hash: number, char: string) => ((hash << 5) - hash + char.charCodeAt(0)) | 0,
                 0
               )
             ) || Math.floor(Math.random() * 2147483647),
@@ -544,8 +608,8 @@ export default function App() {
       try {
         const notificationId =
           Math.abs(
-            Array.from(savedReminder.id).reduce(
-              (hash, char) =>
+            Array.from(String(savedReminder.id)).reduce(
+              (hash: number, char: string) =>
                 ((hash << 5) - hash + char.charCodeAt(0)) | 0,
               0
             )

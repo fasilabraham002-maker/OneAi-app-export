@@ -9,3 +9,9 @@ coverage/
 oneai-release.keystore
 android/key.properties
 keystore.base64
+
+# Local/test signing files
+*.keystore
+*.jks
+*.base64
+*.apk

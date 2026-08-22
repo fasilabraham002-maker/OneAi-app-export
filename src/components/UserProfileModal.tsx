@@ -68,7 +68,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       // TTS may already be stopped.
     }
 
-    setMicTesting(false);
     onClose();
   };
 
