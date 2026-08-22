@@ -563,6 +563,15 @@ export default function App() {
         return;
       }
 
+      await LocalNotifications.createChannel({
+        id: 'oneai-reminders',
+        name: 'OneAI Reminders',
+        description: 'Notifications for OneAI reminders',
+        importance: 5,
+        visibility: 1,
+        sound: 'default',
+      });
+
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -574,6 +583,8 @@ export default function App() {
             ) || Math.floor(Math.random() * 2147483647),
             title: `OneAI Reminder: ${reminder.title}`,
             body: reminder.description || 'You have a reminder.',
+            channelId: 'oneai-reminders',
+            isExactNotification: true,
             schedule: {
               at: dueDate,
               allowWhileIdle: true,

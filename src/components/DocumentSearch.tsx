@@ -24,6 +24,14 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
   voiceText,
 }) => {
   const [query, setQuery] = useState('');
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [readerLoading, setReaderLoading] = useState(false);
+  const [readerTitle, setReaderTitle] = useState('');
+  const [readerFileName, setReaderFileName] = useState('');
+  const [readerContent, setReaderContent] = useState('');
+  const [readerQuestion, setReaderQuestion] = useState('');
+  const [readerAnswer, setReaderAnswer] = useState('');
+  const [readerAsking, setReaderAsking] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState<SearchQueryResponse | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -40,6 +48,171 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
       setQuery((prev) => (prev ? `${prev} ${voiceText}` : voiceText));
     }
   }, [voiceText]);
+
+  const handleOpenReader = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+
+    const supportedTypes = [
+      'txt', 'md', 'csv', 'json',
+      'pdf', 'doc', 'docx',
+      'xls', 'xlsx'
+    ];
+
+    if (!extension || !supportedTypes.includes(extension)) {
+      alert(
+        'OneAI Reader does not support this file type yet. Supported files: PDF, Word, Excel, TXT, MD, CSV and JSON.'
+      );
+      e.target.value = '';
+      return;
+    }
+
+    setReaderLoading(true);
+    setReaderTitle(file.name.replace(/\.[^/.]+$/, ''));
+    setReaderFileName(file.name);
+    setReaderContent('');
+    setReaderAnswer('');
+    setReaderQuestion('');
+    setReaderOpen(true);
+
+    try {
+      let text = '';
+
+      if (['txt', 'md', 'csv', 'json'].includes(extension)) {
+        text = await file.text();
+
+      } else if (extension === 'pdf') {
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          'pdfjs-dist/legacy/build/pdf.worker.mjs',
+          import.meta.url
+        ).toString();
+
+        const arrayBuffer = await file.arrayBuffer();
+
+        const pdf = await pdfjs.getDocument({
+          data: arrayBuffer,
+        }).promise;
+
+        const pages: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+
+          const pageText = content.items
+            .map((item: any) => item.str || '')
+            .join(' ');
+
+          pages.push(`Page ${pageNumber}\n${pageText}`);
+        }
+
+        text = pages.join('\n\n');
+
+      } else if (extension === 'docx') {
+        const mammoth = await import('mammoth');
+        const arrayBuffer = await file.arrayBuffer();
+
+        const result = await mammoth.extractRawText({
+          arrayBuffer,
+        });
+
+        text = result.value;
+
+      } else if (extension === 'doc') {
+        throw new Error(
+          'Old Word .doc files are not directly readable in the browser. Please save the document as .docx and try again.'
+        );
+
+      } else if (extension === 'xls' || extension === 'xlsx') {
+        const XLSX = await import('xlsx');
+        const arrayBuffer = await file.arrayBuffer();
+
+        const workbook = XLSX.read(arrayBuffer, {
+          type: 'array',
+        });
+
+        const sheets: string[] = [];
+
+        for (const sheetName of workbook.SheetNames) {
+          const worksheet = workbook.Sheets[sheetName];
+
+          const rows = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+          }) as unknown[][];
+
+          const sheetText = rows
+            .map((row) =>
+              row.map((cell) => String(cell ?? '')).join(' | ')
+            )
+            .join('\n');
+
+          sheets.push(`Sheet: ${sheetName}\n${sheetText}`);
+        }
+
+        text = sheets.join('\n\n');
+      }
+
+      if (!text.trim()) {
+        throw new Error('The document contains no readable text.');
+      }
+
+      setReaderContent(text);
+    } catch (error: any) {
+      console.error('OneAI Reader error:', error);
+
+      setReaderContent(
+        `Unable to read this document.\n\n${error?.message || 'Unknown error'}`
+      );
+    } finally {
+      setReaderLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleReaderAsk = async () => {
+    if (!readerQuestion.trim() || !readerContent.trim()) return;
+
+    setReaderAsking(true);
+    setReaderAnswer('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          query: `${readerQuestion}
+
+CURRENT DOCUMENT:
+${readerContent.slice(0, 120000)}
+
+Answer the user's question specifically using the current document. If the answer is not present in the document, clearly say that.`,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'OneAI could not answer the question');
+      }
+
+      setReaderAnswer(
+        data.answer || 'OneAI could not find an answer in this document.'
+      );
+    } catch (error: any) {
+      console.error('OneAI Reader question error:', error);
+      setReaderAnswer(`Error: ${error.message || 'Unable to answer question'}`);
+    } finally {
+      setReaderAsking(false);
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,6 +483,173 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
       )}
 
       {/* Document Library Section */}
+      {/* OneAI Document Reader */}
+      <div className="mt-6 rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-slate-50 p-5 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:via-slate-900 dark:to-slate-900">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                OneAI Document Reader
+              </h3>
+            </div>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+              Open a PDF, Word, Excel, text or data file and let OneAI read it with you.
+            </p>
+          </div>
+
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-700">
+            <BookOpen className="h-4 w-4" />
+            <span>Open Document</span>
+            <input
+              type="file"
+              accept=".txt,.md,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx"
+              onChange={handleOpenReader}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Reader Modal */}
+      {readerOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-4">
+          <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+
+            {/* Reader Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 sm:px-6">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                  <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white sm:text-base">
+                    OneAI Document Reader
+                  </h2>
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                  {readerFileName}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReaderOpen(false)}
+                className="ml-3 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Reader Body */}
+            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_380px]">
+
+              {/* Document */}
+              <div className="min-h-0 overflow-y-auto bg-slate-50 p-4 dark:bg-slate-950/50 sm:p-6">
+                {readerLoading ? (
+                  <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center">
+                    <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
+                    <p className="mt-4 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      OneAI is reading your document...
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Extracting readable text from {readerFileName}
+                    </p>
+                  </div>
+                ) : (
+                  <article className="mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
+                    <div className="mb-5 border-b border-slate-100 pb-4 dark:border-slate-800">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                        {readerTitle}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {readerContent.length.toLocaleString()} readable characters
+                      </p>
+                    </div>
+
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-800 dark:text-slate-200">
+                      {readerContent}
+                    </pre>
+                  </article>
+                )}
+              </div>
+
+              {/* OneAI Assistant */}
+              <aside className="flex min-h-0 flex-col border-t border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 lg:border-l lg:border-t-0">
+                <div className="shrink-0 border-b border-slate-200 p-4 dark:border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Ask OneAI
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Ask questions about the document you are currently reading.
+                  </p>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {readerAnswer ? (
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/30">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        OneAI
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800 dark:text-slate-200">
+                        {readerAnswer}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-center dark:border-slate-700">
+                      <BookOpen className="mx-auto h-8 w-8 text-slate-400" />
+                      <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        Your document is ready
+                      </p>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                        Ask OneAI to summarize it, explain a section, find information, or answer a question.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="shrink-0 border-t border-slate-200 p-4 dark:border-slate-700">
+                  <textarea
+                    value={readerQuestion}
+                    onChange={(e) => setReaderQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleReaderAsk();
+                      }
+                    }}
+                    rows={3}
+                    placeholder="Ask about this document..."
+                    className="w-full resize-none rounded-xl border-2 border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleReaderAsk}
+                    disabled={readerAsking || !readerQuestion.trim() || !readerContent.trim()}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {readerAsking ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        OneAI is thinking...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Ask OneAI
+                      </>
+                    )}
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-8">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-bold text-slate-900 dark:text-white">

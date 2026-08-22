@@ -597,7 +597,16 @@ Extract:
     return res.json({ reminder: newReminder });
   } catch (error: any) {
     console.error("AI Reminder Parse Error:", error);
-    return res.status(500).json({ error: "Failed to parse reminder with AI", details: error.message });
+
+    const errorMessage =
+      error?.message ||
+      error?.error?.message ||
+      String(error);
+
+    return res.status(500).json({
+      error: "Failed to parse reminder with AI",
+      details: errorMessage,
+    });
   }
 });
 
