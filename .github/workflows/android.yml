@@ -130,6 +130,14 @@ jobs:
         working-directory: android
         run: ./gradlew bundleRelease --no-daemon
 
+      - name: Inspect APK permissions
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list >/dev/null 2>&1 || true
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -1)
+          echo "Using AAPT2: $AAPT2"
+          "$AAPT2" dump permissions "$APK"
+
       - name: Upload OneAI release APK
         uses: actions/upload-artifact@v4
         with:
