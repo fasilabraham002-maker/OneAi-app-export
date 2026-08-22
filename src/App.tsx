@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpeechRecognition } from "@capgo/capacitor-speech-recognition";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Geolocation } from "@capacitor/geolocation";
 import { Contacts } from "@capacitor-community/contacts";
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
@@ -93,10 +94,51 @@ export default function App() {
   // Loading indicator for chat
   const [chatLoading, setChatLoading] = useState(false);
 
-  // Load user data & documents/reminders on boot
+  // Load user data & documents/reminders after authentication is restored
   useEffect(() => {
+    if (!authToken) {
+      return;
+    }
+
     fetchDocuments();
     fetchReminders();
+  }, [authToken]);
+
+  // Refresh OneAI data whenever the Android app returns to the foreground
+  useEffect(() => {
+    let listenerHandle: { remove: () => Promise<void> } | null = null;
+
+    const setupAppResumeListener = async () => {
+      listenerHandle = await CapacitorApp.addListener(
+        'appStateChange',
+        ({ isActive }) => {
+          if (!isActive) {
+            return;
+          }
+
+          const savedToken = localStorage.getItem('oneai_auth_token');
+
+          if (!savedToken) {
+            return;
+          }
+
+          console.log(
+            'OneAI resumed: refreshing reminders and documents...'
+          );
+
+          fetchDocuments();
+          fetchReminders();
+        }
+      );
+    };
+
+    setupAppResumeListener();
+
+    return () => {
+      if (listenerHandle) {
+        listenerHandle.remove();
+      }
+    };
   }, [authToken]);
 
   const fetchDocuments = async () => {
