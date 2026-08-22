@@ -522,16 +522,27 @@ app.post("/api/chat/generate", async (req, res) => {
 app.post("/api/reminders/parse-ai", async (req, res) => {
   try {
     const { prompt } = req.body;
+
     if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+      return res.status(400).json({
+        error: "Prompt is required",
+      });
     }
 
     const ai = getGenAIClient();
-    const now = new Date().toISOString();
+
+    // Capture the server clock ONCE.
+    // Relative reminders are calculated locally from this exact timestamp.
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowMs = now.getTime();
 
     const response = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite",
-      contents: `Current date and time is ${now}. Parse the following user request into a structured reminder task:
+      contents: `Current date and time is ${nowIso}.
+
+Parse the following user request into a structured reminder task:
+
 "${prompt}"
 
 Extract:
@@ -539,29 +550,54 @@ Extract:
 2. Description (detailed context)
 3. Priority ("low", "medium", "high", or "urgent")
 4. Category ("work", "personal", "health", "finance", "learning", "other")
-5. Estimated Due Date (in ISO string format, or relative to current date)
+5. Estimated Due Date (ISO string if the request specifies an absolute/calendar date)
 6. Subtasks (array of 2 to 4 actionable steps to complete this task)
-7. AiSuggestedSteps (array of 2 helpful execution tips)`,
+7. AiSuggestedSteps (array of 2 helpful execution tips)
+
+IMPORTANT:
+- If the user gives a relative duration such as "in 1 minute", "after 5 minutes", "in 2 hours", etc., do NOT calculate that relative time yourself.
+- Return an empty string for dueDateIso for relative-duration requests.
+- The application server will calculate relative durations exactly from the current server time.
+- For calendar/absolute requests such as "tomorrow at 3 PM", "next Monday at 9 AM", or "August 25 at 10 AM", provide the appropriate ISO date/time.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            title: { type: Type.STRING },
-            description: { type: Type.STRING },
-            priority: { type: Type.STRING },
-            category: { type: Type.STRING },
-            dueDateIso: { type: Type.STRING },
+            title: {
+              type: Type.STRING,
+            },
+            description: {
+              type: Type.STRING,
+            },
+            priority: {
+              type: Type.STRING,
+            },
+            category: {
+              type: Type.STRING,
+            },
+            dueDateIso: {
+              type: Type.STRING,
+            },
             subtasks: {
               type: Type.ARRAY,
-              items: { type: Type.STRING },
+              items: {
+                type: Type.STRING,
+              },
             },
             aiSuggestedSteps: {
               type: Type.ARRAY,
-              items: { type: Type.STRING },
+              items: {
+                type: Type.STRING,
+              },
             },
           },
-          required: ["title", "priority", "category", "subtasks"],
+          required: [
+            "title",
+            "priority",
+            "category",
+            "subtasks",
+          ],
         },
       },
     });
@@ -569,34 +605,173 @@ Extract:
     const parsed = JSON.parse(response.text || "{}");
     const userId = getUserIdFromReq(req);
 
-    // Default due date if missing or unparseable
-    let dueDate = parsed.dueDateIso;
-    if (!dueDate || isNaN(Date.parse(dueDate))) {
-      dueDate = new Date(Date.now() + 86400000).toISOString();
+    /*
+     * ============================================================
+     * EXACT RELATIVE REMINDER TIME
+     * ============================================================
+     *
+     * Examples:
+     *   "in 30 seconds"
+     *   "in 1 minute"
+     *   "after 5 minutes"
+     *   "in 2 hours"
+     *   "in 1 day"
+     *   "in 2 weeks"
+     *
+     * These are calculated directly from the server timestamp.
+     * Gemini is NEVER trusted to calculate relative durations.
+     */
+
+    const normalizedPrompt = String(prompt)
+      .trim()
+      .toLowerCase();
+
+    let dueDate: string | undefined;
+
+    const relativeMatch = normalizedPrompt.match(
+      /\b(?:in|after)\s+(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?)\b/i
+    );
+
+    if (relativeMatch) {
+      const amount = Number(relativeMatch[1]);
+      const unit = relativeMatch[2].toLowerCase();
+
+      let milliseconds = 0;
+
+      if (
+        unit.startsWith("second") ||
+        unit.startsWith("sec")
+      ) {
+        milliseconds = amount * 1000;
+      } else if (
+        unit.startsWith("minute") ||
+        unit.startsWith("min")
+      ) {
+        milliseconds = amount * 60 * 1000;
+      } else if (
+        unit.startsWith("hour") ||
+        unit.startsWith("hr")
+      ) {
+        milliseconds = amount * 60 * 60 * 1000;
+      } else if (unit.startsWith("day")) {
+        milliseconds = amount * 24 * 60 * 60 * 1000;
+      } else if (unit.startsWith("week")) {
+        milliseconds = amount * 7 * 24 * 60 * 60 * 1000;
+      }
+
+      if (milliseconds > 0) {
+        dueDate = new Date(
+          nowMs + milliseconds
+        ).toISOString();
+
+        console.log(
+          `[REMINDER EXACT] "${prompt}" -> ${dueDate} (${milliseconds}ms from server now)`
+        );
+      }
+    }
+
+    /*
+     * ============================================================
+     * ABSOLUTE / CALENDAR REMINDERS
+     * ============================================================
+     *
+     * Gemini's parsed ISO timestamp is used for requests such as:
+     *   "tomorrow at 3 PM"
+     *   "next Monday at 9 AM"
+     *   "August 25 at 10 AM"
+     */
+
+    if (
+      !dueDate &&
+      parsed.dueDateIso &&
+      !isNaN(Date.parse(parsed.dueDateIso))
+    ) {
+      dueDate = new Date(
+        parsed.dueDateIso
+      ).toISOString();
+
+      console.log(
+        `[REMINDER CALENDAR] "${prompt}" -> ${dueDate}`
+      );
+    }
+
+    /*
+     * ============================================================
+     * SAFE FALLBACK
+     * ============================================================
+     */
+
+    if (!dueDate) {
+      dueDate = new Date(
+        nowMs + 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      console.warn(
+        `[REMINDER FALLBACK] Could not determine due date for "${prompt}". Using ${dueDate}`
+      );
     }
 
     const newReminder = {
       id: `rem-${Date.now()}`,
       userId,
       title: parsed.title || prompt,
-      description: parsed.description || "Created via AI Smart Voice/Text Input",
+      description:
+        parsed.description ||
+        "Created via AI Smart Voice/Text Input",
       dueDate,
-      priority: ["low", "medium", "high", "urgent"].includes(parsed.priority) ? parsed.priority : "medium",
-      category: ["work", "personal", "health", "finance", "learning", "other"].includes(parsed.category) ? parsed.category : "personal",
+      priority: [
+        "low",
+        "medium",
+        "high",
+        "urgent",
+      ].includes(parsed.priority)
+        ? parsed.priority
+        : "medium",
+      category: [
+        "work",
+        "personal",
+        "health",
+        "finance",
+        "learning",
+        "other",
+      ].includes(parsed.category)
+        ? parsed.category
+        : "personal",
       isCompleted: false,
       createdAt: new Date().toISOString(),
-      subtasks: (parsed.subtasks || ["Get started on this item"]).map((st: string, idx: number) => ({
+      subtasks: (
+        parsed.subtasks || [
+          "Get started on this item",
+        ]
+      ).map((st: string, idx: number) => ({
         id: `s-${idx}-${Date.now()}`,
         text: st,
         completed: false,
       })),
-      aiSuggestedSteps: parsed.aiSuggestedSteps || ["Break task into 15-minute focused blocks", "Review progress upon completion"],
+      aiSuggestedSteps:
+        parsed.aiSuggestedSteps || [
+          "Break task into 15-minute focused blocks",
+          "Review progress upon completion",
+        ],
     };
 
-    remindersDb.set(newReminder.id, newReminder);
-    return res.json({ reminder: newReminder });
+    remindersDb.set(
+      newReminder.id,
+      newReminder
+    );
+
+    console.log(
+      `[REMINDER CREATED] ${newReminder.id} | due=${newReminder.dueDate} | now=${new Date().toISOString()}`
+    );
+
+    return res.json({
+      reminder: newReminder,
+    });
   } catch (error: any) {
-    console.error("AI Reminder Parse Error:", error);
+    console.error(
+      "AI Reminder Parse Error:",
+      error
+    );
 
     const errorMessage =
       error?.message ||
