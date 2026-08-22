@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpeechRecognition } from "@capgo/capacitor-speech-recognition";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { User, ChatMessage, UploadedDocument, Reminder } from './types';
 import { UserCheck, ShieldCheck } from 'lucide-react';
 import { Navbar } from './components/Navbar';
@@ -429,29 +430,178 @@ export default function App() {
     setDocuments((prev) => prev.filter((d) => d.id !== id));
   };
 
+  // Schedule a native Android notification for a reminder
+  const scheduleReminderNotification = async (reminder: Reminder) => {
+    try {
+      const dueDate = new Date(reminder.dueDate);
+
+      if (isNaN(dueDate.getTime())) {
+        console.error('Invalid reminder due date:', reminder.dueDate);
+        return;
+      }
+
+      if (dueDate.getTime() <= Date.now()) {
+        console.warn('Reminder due date is already in the past:', dueDate);
+        return;
+      }
+
+      const permission = await LocalNotifications.checkPermissions();
+
+      const finalPermission =
+        permission.display === 'granted'
+          ? permission
+          : await LocalNotifications.requestPermissions();
+
+      if (finalPermission.display !== 'granted') {
+        console.warn('Android notification permission was not granted.');
+        return;
+      }
+
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: Math.abs(
+              Array.from(reminder.id).reduce(
+                (hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0,
+                0
+              )
+            ) || Math.floor(Math.random() * 2147483647),
+            title: `OneAI Reminder: ${reminder.title}`,
+            body: reminder.description || 'You have a reminder.',
+            schedule: {
+              at: dueDate,
+              allowWhileIdle: true,
+            },
+            extra: {
+              reminderId: reminder.id,
+            },
+          },
+        ],
+      });
+
+      console.log(
+        'OneAI reminder notification scheduled:',
+        reminder.id,
+        dueDate.toISOString()
+      );
+    } catch (error) {
+      console.error('Failed to schedule reminder notification:', error);
+    }
+  };
+
   // Reminder handlers
-  const handleAddReminder = (reminder: Reminder) => {
-    setReminders((prev) => [reminder, ...prev]);
+  const handleAddReminder = async (reminder: Reminder) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/reminders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(reminder),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save reminder');
+      }
+
+      setReminders((prev) => [data.reminder, ...prev]);
+
+      // Schedule the native Android notification after the server saves the reminder.
+      await scheduleReminderNotification(data.reminder);
+    } catch (error: any) {
+      console.error('Failed to save reminder:', error);
+      alert(`Could not save reminder: ${error.message}`);
+    }
   };
 
   const handleUpdateReminder = async (updated: Reminder) => {
-    setReminders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    await fetch(`${API_BASE_URL}/api/reminders/${updated.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify(updated),
-    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/reminders/${updated.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updated),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update reminder');
+      }
+
+      const savedReminder = data.reminder || updated;
+
+      setReminders((prev) =>
+        prev.map((r) => (r.id === savedReminder.id ? savedReminder : r))
+      );
+
+      // Cancel the old notification before scheduling the updated reminder.
+      try {
+        const notificationId =
+          Math.abs(
+            Array.from(savedReminder.id).reduce(
+              (hash, char) =>
+                ((hash << 5) - hash + char.charCodeAt(0)) | 0,
+              0
+            )
+          ) || 1;
+
+        await LocalNotifications.cancel({
+          notifications: [{ id: notificationId }],
+        });
+      } catch (error) {
+        console.warn('Could not cancel old reminder notification:', error);
+      }
+
+      // Schedule the updated reminder notification.
+      await scheduleReminderNotification(savedReminder);
+    } catch (error: any) {
+      console.error('Failed to update reminder:', error);
+      alert(`Could not update reminder: ${error.message}`);
+      await fetchReminders();
+    }
   };
 
   const handleDeleteReminder = async (id: string) => {
-    setReminders((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`${API_BASE_URL}/api/reminders/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
+    try {
+      const notificationId =
+        Math.abs(
+          Array.from(id).reduce(
+            (hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0,
+            0
+          )
+        ) || 1;
+
+      // Cancel the native Android notification first.
+      try {
+        await LocalNotifications.cancel({
+          notifications: [{ id: notificationId }],
+        });
+      } catch (error) {
+        console.warn('Could not cancel reminder notification:', error);
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/reminders/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete reminder');
+      }
+
+      setReminders((prev) => prev.filter((r) => r.id !== id));
+    } catch (error: any) {
+      console.error('Failed to delete reminder:', error);
+      alert(`Could not delete reminder: ${error.message}`);
+      await fetchReminders();
+    }
   };
 
   // Global Quick Search trigger
