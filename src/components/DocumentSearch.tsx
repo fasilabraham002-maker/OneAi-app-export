@@ -53,22 +53,6 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const extension = file.name.split('.').pop()?.toLowerCase();
-
-    const supportedTypes = [
-      'txt', 'md', 'csv', 'json',
-      'pdf', 'doc', 'docx',
-      'xls', 'xlsx'
-    ];
-
-    if (!extension || !supportedTypes.includes(extension)) {
-      alert(
-        'OneAI Reader does not support this file type yet. Supported files: PDF, Word, Excel, TXT, MD, CSV and JSON.'
-      );
-      e.target.value = '';
-      return;
-    }
-
     setReaderLoading(true);
     setReaderTitle(file.name.replace(/\.[^/.]+$/, ''));
     setReaderFileName(file.name);
@@ -78,9 +62,31 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     setReaderOpen(true);
 
     try {
+      const extension = file.name.includes('.')
+        ? file.name.split('.').pop()?.toLowerCase()
+        : '';
+
       let text = '';
 
-      if (['txt', 'md', 'csv', 'json'].includes(extension)) {
+      // Plain text, source code, markup, configuration and data files.
+      const textExtensions = new Set([
+        'txt', 'text', 'md', 'markdown', 'csv', 'json',
+        'ts', 'tsx', 'tss', 'js', 'jsx', 'mjs', 'cjs',
+        'css', 'scss', 'sass', 'less',
+        'html', 'htm', 'xml', 'svg',
+        'yaml', 'yml', 'toml', 'ini', 'conf', 'config',
+        'log', 'sql', 'graphql', 'gql',
+        'sh', 'bash', 'zsh', 'bat', 'cmd',
+        'java', 'kt', 'kts', 'c', 'h', 'cpp', 'hpp',
+        'cs', 'go', 'rs', 'rb', 'php', 'swift',
+        'dart', 'py', 'r', 'lua', 'pl',
+        'vue', 'svelte', 'astro',
+        'env', 'gitignore', 'dockerfile',
+      ]);
+
+      if (textExtensions.has(extension || '') ||
+          file.type.startsWith('text/') ||
+          !extension) {
         text = await file.text();
 
       } else if (extension === 'pdf') {
@@ -124,7 +130,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
       } else if (extension === 'doc') {
         throw new Error(
-          'Old Word .doc files are not directly readable in the browser. Please save the document as .docx and try again.'
+          'Old Word .doc files cannot be reliably read directly in the browser. Please save it as .docx or PDF.'
         );
 
       } else if (extension === 'xls' || extension === 'xlsx') {
@@ -147,7 +153,9 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
           const sheetText = rows
             .map((row) =>
-              row.map((cell) => String(cell ?? '')).join(' | ')
+              row
+                .map((cell) => String(cell ?? ''))
+                .join(' | ')
             )
             .join('\n');
 
@@ -155,18 +163,27 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
         }
 
         text = sheets.join('\n\n');
+
+      } else {
+        // Last-resort text reader.
+        // This allows many unknown/source-code extensions to be opened
+        // instead of rejecting them simply because their extension is unknown.
+        text = await file.text();
       }
 
       if (!text.trim()) {
-        throw new Error('The document contains no readable text.');
+        throw new Error(
+          `The file "${file.name}" contains no readable text.`
+        );
       }
 
       setReaderContent(text);
+
     } catch (error: any) {
       console.error('OneAI Reader error:', error);
 
       setReaderContent(
-        `Unable to read this document.\n\n${error?.message || 'Unknown error'}`
+        `Unable to read "${file.name}".\n\n${error?.message || 'Unknown error'}`
       );
     } finally {
       setReaderLoading(false);
@@ -270,22 +287,9 @@ Answer the user's question specifically using the current document. If the answe
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const extension = file.name.split('.').pop()?.toLowerCase();
-
-    const supportedTypes = [
-      'txt', 'md', 'csv', 'json',
-      'pdf',
-      'docx',
-      'xls', 'xlsx'
-    ];
-
-    if (!extension || !supportedTypes.includes(extension)) {
-      alert(
-        'This file type is not supported. Please upload TXT, MD, CSV, JSON, PDF, Word (.docx), or Excel files.'
-      );
-      e.target.value = '';
-      return;
-    }
+    const extension = file.name.includes('.')
+      ? file.name.split('.').pop()?.toLowerCase()
+      : '';
 
     setDocFileName(file.name);
 
@@ -296,16 +300,37 @@ Answer the user's question specifically using the current document. If the answe
     try {
       let text = '';
 
-      if (['txt', 'md', 'csv', 'json'].includes(extension)) {
+      // Plain text, source code, markup, configuration and data files.
+      const textExtensions = new Set([
+        'txt', 'text', 'md', 'markdown', 'csv', 'json',
+        'ts', 'tsx', 'tss', 'js', 'jsx', 'mjs', 'cjs',
+        'css', 'scss', 'sass', 'less',
+        'html', 'htm', 'xml', 'svg',
+        'yaml', 'yml', 'toml', 'ini', 'conf', 'config',
+        'log', 'sql', 'graphql', 'gql',
+        'sh', 'bash', 'zsh', 'bat', 'cmd',
+        'java', 'kt', 'kts', 'c', 'h', 'cpp', 'hpp',
+        'cs', 'go', 'rs', 'rb', 'php', 'swift',
+        'dart', 'py', 'r', 'lua', 'pl',
+        'vue', 'svelte', 'astro',
+        'env', 'gitignore', 'dockerfile'
+      ]);
+
+      if (
+        textExtensions.has(extension || '') ||
+        file.type.startsWith('text/') ||
+        !extension
+      ) {
         text = await file.text();
 
       } else if (extension === 'pdf') {
         const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        'pdfjs-dist/legacy/build/pdf.worker.mjs',
-        import.meta.url
-      ).toString();
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          'pdfjs-dist/legacy/build/pdf.worker.mjs',
+          import.meta.url
+        ).toString();
+
         const arrayBuffer = await file.arrayBuffer();
 
         const pdf = await pdfjs.getDocument({
@@ -320,9 +345,70 @@ Answer the user's question specifically using the current document. If the answe
 
           const pageText = content.items
             .map((item: any) => item.str || '')
-            .join(' ');
+            .join(' ')
+            .trim();
 
-          pages.push(`Page ${pageNumber}\n${pageText}`);
+          // Normal PDF with selectable text.
+          if (pageText.length > 30) {
+            pages.push(`Page ${pageNumber}\n${pageText}`);
+            continue;
+          }
+
+          // Scanned/photo PDF page: render it and run OCR.
+          try {
+            const viewport = page.getViewport({ scale: 1.5 });
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            if (!context) {
+              pages.push(`Page ${pageNumber}\n[Unable to create canvas for OCR]`);
+              continue;
+            }
+
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+
+            await page.render({
+              canvasContext: context,
+              viewport,
+            }).promise;
+
+            const Tesseract = await import('tesseract.js');
+
+            const ocrResult = await Tesseract.recognize(
+              canvas,
+              'eng',
+              {
+                logger: (message: any) => {
+                  if (message?.status === 'recognizing text') {
+                    console.log(
+                      `OneAI OCR page ${pageNumber}: ${Math.round((message.progress || 0) * 100)}%`
+                    );
+                  }
+                },
+              }
+            );
+
+            const ocrText = ocrResult.data.text?.trim();
+
+            pages.push(
+              `Page ${pageNumber}\n${
+                ocrText || '[No readable text detected by OCR]'
+              }`
+            );
+
+            canvas.width = 1;
+            canvas.height = 1;
+          } catch (ocrError: any) {
+            console.error(`OCR failed on PDF page ${pageNumber}:`, ocrError);
+
+            pages.push(
+              `Page ${pageNumber}\n[OCR could not read this scanned/image page: ${
+                ocrError?.message || 'Unknown OCR error'
+              }]`
+            );
+          }
         }
 
         text = pages.join('\n\n');
@@ -331,8 +417,16 @@ Answer the user's question specifically using the current document. If the answe
         const mammoth = await import('mammoth');
         const arrayBuffer = await file.arrayBuffer();
 
-        const result = await mammoth.extractRawText({ arrayBuffer });
+        const result = await mammoth.extractRawText({
+          arrayBuffer,
+        });
+
         text = result.value;
+
+      } else if (extension === 'doc') {
+        throw new Error(
+          'Old Word .doc files cannot be reliably read directly in the browser. Please save it as .docx or PDF.'
+        );
 
       } else if (extension === 'xls' || extension === 'xlsx') {
         const XLSX = await import('xlsx');
@@ -346,25 +440,49 @@ Answer the user's question specifically using the current document. If the answe
 
         for (const sheetName of workbook.SheetNames) {
           const worksheet = workbook.Sheets[sheetName];
-          const csv = XLSX.utils.sheet_to_csv(worksheet);
 
-          sheets.push(`Sheet: ${sheetName}\n${csv}`);
+          const rows = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+          }) as unknown[][];
+
+          const sheetText = rows
+            .map((row) =>
+              row
+                .map((cell) => String(cell ?? ''))
+                .join(' | ')
+            )
+            .join('\n');
+
+          sheets.push(`Sheet: ${sheetName}\n${sheetText}`);
         }
 
         text = sheets.join('\n\n');
+
+      } else {
+        // Last-resort reader for unknown/source-code extensions.
+        text = await file.text();
       }
 
       if (!text.trim()) {
-        alert('The selected document contains no readable text.');
-        e.target.value = '';
-        return;
+        throw new Error(
+          'OneAI could not find readable text in this file.'
+        );
       }
 
       setDocContent(text);
 
     } catch (error: any) {
-      console.error('Document parsing error:', error);
-      alert(`Unable to read this document: ${error.message || 'Unknown error'}`);
+      console.error('OneAI document parsing error:', error);
+
+      alert(
+        `Unable to read this document: ${
+          error?.message || 'Unknown error'
+        }`
+      );
+
+      setDocContent('');
+    } finally {
       e.target.value = '';
     }
   };  return (
@@ -503,7 +621,7 @@ Answer the user's question specifically using the current document. If the answe
             <span>Open Document</span>
             <input
               type="file"
-              accept=".txt,.md,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx"
+              accept=".txt,.md,.markdown,.csv,.json,.ts,.tsx,.js,.jsx,.mjs,.cjs,.css,.scss,.sass,.less,.html,.htm,.xml,.svg,.yaml,.yml,.toml,.ini,.conf,.log,.sql,.graphql,.gql,.sh,.bash,.zsh,.bat,.cmd,.java,.kt,.kts,.c,.h,.cpp,.hpp,.cs,.go,.rs,.rb,.php,.swift,.dart,.py,.r,.lua,.pl,.vue,.svelte,.astro,.tss,.text,.pdf,.doc,.docx,.xls,.xlsx"
               onChange={handleOpenReader}
               className="hidden"
             />
@@ -756,7 +874,37 @@ Answer the user's question specifically using the current document. If the answe
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Document Text Content</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Document Text Content
+                </label>
+
+                {docFileName && docContent && (
+                  <div className="mt-2 overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                    <div className="flex items-center justify-between border-b border-indigo-100 bg-white px-3 py-2 dark:border-indigo-900/60 dark:bg-slate-900">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                        <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          Preview: {docFileName}
+                        </span>
+                      </div>
+                      <span className="ml-2 shrink-0 text-[10px] text-slate-400">
+                        {docContent.length.toLocaleString()} chars
+                      </span>
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto bg-white p-4 dark:bg-slate-950">
+                      <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-slate-700 dark:text-slate-300">
+                        {docContent}
+                      </pre>
+                    </div>
+
+                    <div className="border-t border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
+                      ✓ OneAI successfully extracted readable content from this file.
+                      Review it above before saving.
+                    </div>
+                  </div>
+                )}
+
                 <textarea
                   required
                   rows={10}
