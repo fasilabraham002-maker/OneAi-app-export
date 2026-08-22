@@ -11,15 +11,16 @@ import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-
-    private static final int PERMISSION_REQUEST_CODE = 1001;
-
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(AndroidUriReaderPlugin.class);
         super.onCreate(savedInstanceState);
-
         requestOneAIPermissions();
     }
+
+
+
+    private static final int PERMISSION_REQUEST_CODE = 1001;
 
     private void requestOneAIPermissions() {
         java.util.ArrayList<String> permissions = new java.util.ArrayList<>();

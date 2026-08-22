@@ -1,4 +1,11 @@
 import React, { useState } from 'react';
+import { Filesystem } from '@capacitor/filesystem';
+import { registerPlugin } from '@capacitor/core';
+
+const AndroidUriReader = registerPlugin<{
+  readUri(options: { uri: string }): Promise<{ data: string }>;
+}>('AndroidUriReader');
+
 import { UploadedDocument, SearchQueryResponse } from '../types';
 import { Search, Upload, FileText, Sparkles, Trash2, ArrowRight, CheckCircle2, Tag, BookOpen, Mic, AlertCircle, RefreshCw, Paperclip } from 'lucide-react';
 
