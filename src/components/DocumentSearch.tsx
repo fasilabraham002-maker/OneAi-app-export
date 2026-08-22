@@ -854,7 +854,7 @@ Answer the user's question specifically using the current document. If the answe
               <span>Upload Document to Knowledge Base</span>
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Paste document text or select a text file (.txt, .md, .csv, .json). OneAI will automatically summarize and chunk it.
+              Paste document text or select a file. OneAI can read PDF, Word (.docx), Excel (.xls/.xlsx), CSV, JSON, Markdown, TXT and many other common document formats.
             </p>
 
             <form onSubmit={handleFileUpload} className="mt-4 space-y-4">
@@ -871,10 +871,10 @@ Answer the user's question specifically using the current document. If the answe
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">File Attachment (Optional File Picker)</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">File Attachment (PDF, Word, Excel and other supported documents)</label>
                 <input
                   type="file"
-                  accept=".txt,.md,.json,.csv,.pdf,.docx,.xls,.xlsx"
+                  accept=".txt,.text,.md,.markdown,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx,.xml,.html,.htm,.yaml,.yml,.rtf"
                   onChange={handleFileDrop}
                   className="mt-1 w-full text-xs text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
                 />
