@@ -128,6 +128,11 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
       } else if (extension === 'pdf') {
         const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/legacy/build/pdf.worker.mjs',
+        import.meta.url
+      ).toString();
         const arrayBuffer = await file.arrayBuffer();
 
         const pdf = await pdfjs.getDocument({
