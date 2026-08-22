@@ -93,18 +93,22 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     }
   };
 
-  const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileDrop = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const extension = file.name.split('.').pop()?.toLowerCase();
 
-    // Browser-native text formats supported by OneAI.
-    const supportedTypes = ['txt', 'md', 'csv', 'json'];
+    const supportedTypes = [
+      'txt', 'md', 'csv', 'json',
+      'pdf',
+      'docx',
+      'xls', 'xlsx'
+    ];
 
     if (!extension || !supportedTypes.includes(extension)) {
       alert(
-        'This file type is not supported yet. Please upload a .txt, .md, .csv, or .json file.'
+        'This file type is not supported. Please upload TXT, MD, CSV, JSON, PDF, Word (.docx), or Excel files.'
       );
       e.target.value = '';
       return;
@@ -116,26 +120,77 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
       setDocTitle(file.name.replace(/\.[^/.]+$/, ''));
     }
 
-    const reader = new FileReader();
+    try {
+      let text = '';
 
-    reader.onload = (event) => {
-      const text = event.target?.result;
+      if (['txt', 'md', 'csv', 'json'].includes(extension)) {
+        text = await file.text();
 
-      if (typeof text === 'string') {
-        setDocContent(text);
-      } else {
-        alert('Unable to read this document.');
+      } else if (extension === 'pdf') {
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const arrayBuffer = await file.arrayBuffer();
+
+        const pdf = await pdfjs.getDocument({
+          data: arrayBuffer,
+          disableWorker: true,
+        }).promise;
+
+        const pages: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+
+          const pageText = content.items
+            .map((item: any) => item.str || '')
+            .join(' ');
+
+          pages.push(`Page ${pageNumber}\n${pageText}`);
+        }
+
+        text = pages.join('\n\n');
+
+      } else if (extension === 'docx') {
+        const mammoth = await import('mammoth');
+        const arrayBuffer = await file.arrayBuffer();
+
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        text = result.value;
+
+      } else if (extension === 'xls' || extension === 'xlsx') {
+        const XLSX = await import('xlsx');
+        const arrayBuffer = await file.arrayBuffer();
+
+        const workbook = XLSX.read(arrayBuffer, {
+          type: 'array',
+        });
+
+        const sheets: string[] = [];
+
+        for (const sheetName of workbook.SheetNames) {
+          const worksheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(worksheet);
+
+          sheets.push(`Sheet: ${sheetName}\n${csv}`);
+        }
+
+        text = sheets.join('\n\n');
       }
-    };
 
-    reader.onerror = () => {
-      alert('Failed to read the selected document.');
-    };
+      if (!text.trim()) {
+        alert('The selected document contains no readable text.');
+        e.target.value = '';
+        return;
+      }
 
-    reader.readAsText(file);
-  };
+      setDocContent(text);
 
-  return (
+    } catch (error: any) {
+      console.error('Document parsing error:', error);
+      alert(`Unable to read this document: ${error.message || 'Unknown error'}`);
+      e.target.value = '';
+    }
+  };  return (
     <div className="flex flex-col h-full overflow-y-auto bg-slate-50/50 p-4 dark:bg-slate-900/40 sm:p-6">
       {/* Header section */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -350,7 +405,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">File Attachment (Optional File Picker)</label>
                 <input
                   type="file"
-                  accept=".txt,.md,.json,.csv"
+                  accept=".txt,.md,.json,.csv,.pdf,.docx,.xls,.xlsx"
                   onChange={handleFileDrop}
                   className="mt-1 w-full text-xs text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
                 />
